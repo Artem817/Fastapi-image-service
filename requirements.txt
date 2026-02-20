@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+alembic
+pydantic-settings
+psycopg2-binary
+python-jose
+passlib
+Pillow
+python-multipart
+redis>=4.2.0
+torch
+torchvision
