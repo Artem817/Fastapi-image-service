@@ -24,8 +24,9 @@ Quality is not comparable to top-tier tools yet, but it will improve.
 ## Quick Start
 1. Install dependencies:
    - `pip install -r requirements.txt`
-2. Provide environment variables (see below).
-3. Run the API:
+2. Copy `.env.example` to `.env` and update values.
+3. Provide environment variables (see below).
+4. Run the API:
    - `uvicorn app.main:app --host 0.0.0.0 --port 8000`
 
 ## Environment Variables
@@ -47,6 +48,9 @@ Recommended approach:
   A GitHub Release asset URL or S3/GCS URL works well here.
 
 ## Background Removal Architecture
+ResNet-101 encoder extracts features, and a U-Net style decoder upsamples
+with skip connections to predict a 1‑channel foreground mask that becomes the alpha channel.
+
 The background removal model is a U-Net style decoder on top of a ResNet-101 encoder.
 It uses ResNet-101 blocks for feature extraction and a multi-stage decoder with
 upsampling, skip connections, and Conv/BN/ReLU blocks to produce a 1-channel mask.
@@ -57,9 +61,9 @@ Implementation details:
 - Head: `1x1` conv to get a single-channel logits mask.
 - Inference: logits are resized to input size and passed through `sigmoid` to get the mask.
 
-Weights are loaded from `app/models_unet/resnet101_unet.pth` at import time in
-`app/models_unet/model_arch.py`. If the file is missing, the remove-bg endpoint
-will not work.
+Weights are loaded in `app/models_unet/model_arch.py` from `MODEL_PATH` or downloaded
+from `MODEL_URL` (or a local `app/models_unet/resnet101_unet.pth` if present). If
+weights are missing, the remove-bg endpoint returns an error.
 
 
 ## Core Endpoints
