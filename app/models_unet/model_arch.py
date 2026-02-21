@@ -1,3 +1,5 @@
+import os
+import urllib.request
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -5,40 +7,51 @@ import torchvision.models as models
 import torchvision.transforms as T
 from PIL import Image
 import numpy as np
-import os
-import urllib.request
 
 def ensure_model_weights():
     """
-    Ensures the model weights are available. If they are missing, downloads them from GitHub Releases.
-    
-    Returns:
-        str: Path to the file with the model weights
+    Locate model weights (.pth). Order of precedence:
+    1. Explicit path from ENV `MODEL_PATH`
+    2. Local bundled file `resnet101_unet.pth`
+    3. Download from ENV `MODEL_URL` (falls back to GitHub release URL)
     """
-    
+
+    env_path = os.getenv("MODEL_PATH")
+    if env_path:
+        if os.path.exists(env_path):
+            print(f"✓ Using model weights from MODEL_PATH: {env_path}")
+            return env_path
+        print(f"✗ MODEL_PATH is set but file not found: {env_path}")
+
     model_dir = os.path.dirname(os.path.abspath(__file__))
     weights_path = os.path.join(model_dir, "resnet101_unet.pth")
-    
-    github_url = "https://github.com/Artem817/Fastapi-image-service/releases/download/v1.0.0-rc1/resnet101_unet.pth"
-    
-    if not os.path.exists(weights_path):
-        print("Model weights not found. Attempting to download from GitHub Releases...")
-        try:
-            print(f"   Downloading from: {github_url}")
-            urllib.request.urlretrieve(github_url, weights_path)
-            print(f"✓ Download complete! Saved to: {weights_path}")
-            return weights_path
-        except urllib.error.URLError as e:
-            print(f"✗ Failed to download weights from GitHub: {e}")
-            print(f"   Please manually download and place the file at: {weights_path}")
-            print(f"   Or create a Release on GitHub with the .pth file")
-            return None
-        except Exception as e:
-            print(f"✗ Unexpected error during download: {e}")
-            return None
-    else:
+
+    if os.path.exists(weights_path):
         print(f"✓ Model weights found at: {weights_path}")
         return weights_path
+
+    download_url = os.getenv(
+        "MODEL_URL",
+        "https://github.com/Artem817/Fastapi-image-service/releases/download/v1.0.0-rc1/resnet101_unet.pth",
+    )
+
+    if not download_url:
+        print("✗ MODEL_URL not provided and local weights missing.")
+        return None
+
+    print("Model weights not found locally. Attempting to download...")
+    try:
+        print(f"   Downloading from: {download_url}")
+        urllib.request.urlretrieve(download_url, weights_path)
+        print(f"✓ Download complete! Saved to: {weights_path}")
+        return weights_path
+    except urllib.error.URLError as e:
+        print(f"✗ Failed to download weights: {e}")
+        print(f"   Please provide MODEL_PATH or place the file at: {weights_path}")
+        return None
+    except Exception as e:
+        print(f"✗ Unexpected error during download: {e}")
+        return None
 
 class DecoderBlock(nn.Module):
     def __init__(self, in_channels, skip_channels, out_channels):
@@ -116,25 +129,33 @@ class ResNet101Unifier(nn.Module):
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Running on: {device}")
 
+model_ready = False
 model = ResNet101Unifier(n_classes=1).to(device)
 
 weights_path = ensure_model_weights()
 
 if weights_path and os.path.exists(weights_path):
     try:
-        model.load_state_dict(torch.load(weights_path, map_location=device))
+        state_dict = torch.load(weights_path, map_location=device)
+        model.load_state_dict(state_dict)
         model.eval()
-        print(f"✓ Model loaded successfully and set to eval mode")
+        model_ready = True
+        print("✓ Model loaded successfully and set to eval mode")
     except Exception as e:
+        model_ready = False
         print(f"✗ Error loading model weights: {e}")
         print(f"  Make sure {weights_path} is a valid PyTorch checkpoint.")
         model.eval()
 else:
-    print(f"⚠ Model weights unavailable. remove_bg endpoint will not work.")
-    print(f"  To fix this:")
-    print(f"  1. Download or train resnet101_unet.pth")
-    print(f"  2. Create a GitHub Release and upload the file")
-    print(f"  3. Update the github_url in ensure_model_weights()")
-    print(f"  4. Restart the application")
+    model_ready = False
+    print("⚠ Model weights unavailable. remove_bg endpoint will not work.")
+    print("  Provide MODEL_PATH or MODEL_URL, or place resnet101_unet.pth next to this file.")
     model.eval()
 
+
+def get_model():
+    if not model_ready:
+        raise RuntimeError(
+            "Background removal model is not loaded. Set MODEL_PATH/ MODEL_URL or place resnet101_unet.pth in app/models_unet/."
+        )
+    return model

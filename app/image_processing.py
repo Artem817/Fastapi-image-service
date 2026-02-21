@@ -8,11 +8,7 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torchvision.models as models
 import torchvision.transforms as T
-from PIL import Image
 import numpy as np
 
 
@@ -104,8 +100,21 @@ class ResizeStrategy(ImageProcessingStrategy):
             return output_transform_bytes(resized_image, image.format)
 
 class RemoveBackground(ImageProcessingStrategy):
-    def __init__(self):
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    def __init__(self, model: Optional[torch.nn.Module] = None, device: Optional[str] = None, threshold: float = 0.5):
+        # Allow injection for tests; otherwise load real model
+        self.model = model or model_arch.get_model()
+        if hasattr(self.model, "eval"):
+            self.model.eval()
+
+        if device:
+            self.device = torch.device(device)
+        else:
+            try:
+                self.device = next(self.model.parameters()).device
+            except StopIteration:
+                self.device = torch.device("cpu")
+
+        self.threshold = threshold
         self.transform = T.Compose([
             T.Resize((320, 320)),
             T.ToTensor(),
@@ -116,19 +125,26 @@ class RemoveBackground(ImageProcessingStrategy):
         with Image.open(io.BytesIO(image_bytes)) as image:
             original_img = image.convert("RGB")
             w, h = original_img.size
-            
+
             input_tensor = self.transform(original_img).unsqueeze(0).to(self.device)
-            
+
             with torch.no_grad():
-                logits = model_arch.model(input_tensor)
+                logits = self.model(input_tensor)
                 pred_mask = torch.sigmoid(logits).squeeze().cpu().numpy()
-            
-            mask_img = Image.fromarray((pred_mask * 255).astype('uint8'), 'L')
-            mask_img = mask_img.resize((w, h), Image.BILINEAR)
-            
-            result_img = original_img.copy()
+
+            mask_normalized = (pred_mask * 255).astype("uint8")
+            mask_img = Image.fromarray(mask_normalized).convert("L")
+            resample = getattr(Image, "Resampling", Image).BILINEAR
+            mask_img = mask_img.resize((w, h), resample)
+
+            # Binarize mask to avoid semi-transparent overlays that dull colors
+            cutoff = int(self.threshold * 255)
+            mask_img = mask_img.point(lambda p: 255 if p >= cutoff else 0)
+
+            # Preserve original colors; use mask only as alpha channel
+            result_img = original_img.convert("RGBA")
             result_img.putalpha(mask_img)
-            
+
             return output_transform_bytes(result_img, "PNG")
         
 class WatermarkStrategy(ImageProcessingStrategy):

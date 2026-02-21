@@ -11,3 +11,4 @@ python-multipart
 redis>=4.2.0
 torch
 torchvision
+pytest
