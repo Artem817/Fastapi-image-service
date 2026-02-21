@@ -24,11 +24,9 @@ Quality is not comparable to top-tier tools yet, but it will improve.
 ## Quick Start
 1. Install dependencies:
    - `pip install -r requirements.txt`
-2. Install dev/test dependencies:
-   - `pip install -r requirements-dev.txt`
-3. Copy `.env.example` to `.env` and update values.
-4. Provide environment variables (see below).
-5. Run the API:
+2. Copy `.env.example` to `.env` and update values.
+3. Provide environment variables (see below).
+4. Run the API:
    - `uvicorn app.main:app --host 0.0.0.0 --port 8000`
 
 ## Environment Variables
@@ -50,9 +48,6 @@ Recommended approach:
   A GitHub Release asset URL or S3/GCS URL works well here.
 
 ## Background Removal Architecture
-ResNet-101 encoder extracts features, and a U-Net style decoder upsamples
-with skip connections to predict a 1‑channel foreground mask that becomes the alpha channel.
-
 The background removal model is a U-Net style decoder on top of a ResNet-101 encoder.
 It uses ResNet-101 blocks for feature extraction and a multi-stage decoder with
 upsampling, skip connections, and Conv/BN/ReLU blocks to produce a 1-channel mask.
