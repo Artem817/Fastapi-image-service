@@ -1,14 +1,13 @@
 # Image Processing Service
 
 ![Status: Proof of Concept](https://img.shields.io/badge/Status-Proof_of_Concept-yellow)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=flat&logo=fastapi&logoColor=white)
+![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?style=flat&logo=pytorch&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=flat&logo=postgresql&logoColor=white)
 
-![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=flat&logo=fastapi)
 
-
-![Python](https://img.shields.io/badge/python-3.11-blue)
-
-
-Simple FastAPI service for uploading images and applying basic transformations
+FastAPI service for uploading images and applying basic transformations
 (filter, resize, rotate, flip, watermark). Images are cached in Redis and
 metadata is stored in PostgreSQL via SQLAlchemy.
 
@@ -54,7 +53,7 @@ Recommended approach:
 - Or provide `MODEL_URL` and download the file at startup or via a setup script.
   A GitHub Release asset URL or S3/GCS URL works well here.
 
-## Background Removal Architecture
+## Model: U-Net (ResNet-101)
 The background removal model is a U-Net style decoder on top of a ResNet-101 encoder.
 It uses ResNet-101 blocks for feature extraction and a multi-stage decoder with
 upsampling, skip connections, and Conv/BN/ReLU blocks to produce a 1-channel mask.
@@ -69,6 +68,24 @@ Weights are loaded in `app/models_unet/model_arch.py` from `MODEL_PATH` or downl
 from `MODEL_URL` (or a local `app/models_unet/resnet101_unet.pth` if present). If
 weights are missing, the remove-bg endpoint returns an error.
 
+
+###  Technical Specifications
+* **Architecture:** U-Net with ResNet-101 Backbone.
+* **Training Hardware:** Kaggle P100 GPU.
+* **Training Duration:** 10 Epochs.
+* **Key Strengths:** High-fidelity edge detection, especially in complex areas like facial hair, headwear, and fine textures.
+
+### Results Demonstration
+
+| Input vs. Output Segmentation |
+| :---: |
+| <img src="https://github.com/user-attachments/assets/f49f74b9-fbf6-41d6-828f-251a12496452" width="600" alt="U-Net Result"> |
+| *Left: Original Image | Right: Processed result showing clean, precise edges.* |
+
+> [!TIP]
+> You may notice a slight halo around complex contours (hair, cap edges).The model performs semantic segmentation (classification of pixels as "person/background") rather than Alpha Matting (calculation of edge transparency).
+
+*Photo by [X-Outcast](https://unsplash.com/@xoutcastx) via **Unsplash**.*
 
 ## Core Endpoints
 - `POST /images/upload`
