@@ -8,6 +8,7 @@ from redis import asyncio as aioredis
 from .database import engine
 from .models import Base
 from .routers import auth as auth_router
+from .routers.exceptions_handler import register_exception_handlers
 from .routers import health as health_router
 from .routers import images as images_router
 from .routers import users as users_router
@@ -45,6 +46,7 @@ async def save_user_settings(redis, user_id: int, settings: dict):
 
 
 app = FastAPI(title="Image Management API", version="1.0.0", lifespan=lifespan)
+register_exception_handlers(app)
 app.include_router(health_router.router)
 app.include_router(auth_router.router)
 app.include_router(images_router.router)

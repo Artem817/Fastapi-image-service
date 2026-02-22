@@ -26,3 +26,4 @@ processed_images/
 models/
 *.pth
 app/models_unet/*.pth
+ARCHITECTURE_NOTES.md

@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import Form
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime
 from typing import Optional, List
 
@@ -21,8 +21,7 @@ class UserResponse(BaseModel):
     is_active: bool
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class Token(BaseModel):
     access_token: str
@@ -100,5 +99,4 @@ class TransformPhotoRequest(ImageID):
     compress: Optional[CompressPhotoRequest]
     change_format: Optional[ChangePhotoRequest]
     filter: Optional[FilterPhotoRequest]
-
 

@@ -101,7 +101,6 @@ class ResizeStrategy(ImageProcessingStrategy):
 
 class RemoveBackground(ImageProcessingStrategy):
     def __init__(self, model: Optional[torch.nn.Module] = None, device: Optional[str] = None, threshold: float = 0.5):
-        # Allow injection for tests; otherwise load real model
         self.model = model or model_arch.get_model()
         if hasattr(self.model, "eval"):
             self.model.eval()
@@ -137,11 +136,9 @@ class RemoveBackground(ImageProcessingStrategy):
             resample = getattr(Image, "Resampling", Image).BILINEAR
             mask_img = mask_img.resize((w, h), resample)
 
-            # Binarize mask to avoid semi-transparent overlays that dull colors
             cutoff = int(self.threshold * 255)
             mask_img = mask_img.point(lambda p: 255 if p >= cutoff else 0)
 
-            # Preserve original colors; use mask only as alpha channel
             result_img = original_img.convert("RGBA")
             result_img.putalpha(mask_img)
 

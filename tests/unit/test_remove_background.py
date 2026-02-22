@@ -6,7 +6,6 @@ from PIL import Image
 
 from app.image_processing import ImageProcessor, RemoveBackground
 
-
 class FakeModel(torch.nn.Module):
     def __init__(self, fill_value: float):
         super().__init__()
@@ -20,7 +19,6 @@ class FakeModel(torch.nn.Module):
 @pytest.mark.parametrize(
     "shelf_image, expected_size, mask_value, expected_alpha, expected_color",
     [
-        # FakeModel emits logits; large positive => mask ~1, large negative => mask ~0
         ({"size": (4, 4), "color": (0, 0, 255)}, (4, 4), 10.0, 255, (0, 0, 255)),
         ({"size": (3, 2), "color": (255, 0, 0)}, (3, 2), -10.0, 0, (255, 0, 0)),
     ],
@@ -30,7 +28,6 @@ class FakeModel(torch.nn.Module):
 def test_remove_background_respects_model_mask(shelf_image, expected_size, mask_value, expected_alpha, expected_color):
     shelf_bytes = shelf_image.getvalue()
 
-    # Use a fake mask to avoid asserting behavior of a human-segmentation model on synthetic images
     processor = ImageProcessor(RemoveBackground(model=FakeModel(mask_value)))
     processed_bytes = processor.process_image(shelf_bytes)
 
@@ -46,6 +43,5 @@ def test_remove_background_respects_model_mask(shelf_image, expected_size, mask_
             f"Alpha channel should reflect mask value {mask_value}; got range {alpha_min}-{alpha_max}"
         )
 
-        # When mask keeps everything, pixel colors must be preserved
         if expected_alpha == 255:
             assert img.getpixel((0, 0)) == (*expected_color, 255)

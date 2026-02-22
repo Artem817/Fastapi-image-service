@@ -29,6 +29,13 @@ Quality is not comparable to top-tier tools yet, but it will improve.
 4. Run the API:
    - `uvicorn app.main:app --host 0.0.0.0 --port 8000`
 
+## Recent Updates
+- Added domain-level exceptions with a centralized FastAPI handler.
+- Hardened upload validation (size cap and file signature checks).
+- Fixed Redis cleanup for image deletion and improved not-found responses.
+- Added async upload tests with mocked Redis and HTTPX client fixtures.
+- Modernized SQLAlchemy base declaration and refreshed dependencies.
+
 ## Environment Variables
 - `DATABASE_URL` (required)
 - `SECRET_KEY` (required)

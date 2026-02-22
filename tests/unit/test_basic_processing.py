@@ -3,14 +3,10 @@ import pytest
 import io
 from PIL import Image
 
-from app.image_processing import FlipImageStrategy, ImageProcessor, ResizeStrategy,ChangeFormatStrategy, RotateImageStrategy, output_transform_bytes
+from app.image_processing import FlipImageStrategy, ImageProcessor, ResizeStrategy, ChangeFormatStrategy, RotateImageStrategy, output_transform_bytes
 from tests.unit.conftest import ShelfImageFactory, ShelfImageConfig
 BLACK = (0, 0, 0)
 RED = (255, 0, 0)
-
-#python3 -m pytest -vv --tb=long tests/unit/image_processing_tests.py
-
-# Testing basic functions
 
 @pytest.mark.parametrize(
     "shelf_image, fmt, signature",
@@ -50,11 +46,9 @@ def test_rotate_dimensions(shelf_image, angle, expected_size):
 @pytest.mark.parametrize(
     "shelf_image, expected_width, expected_height",
     [
-        # standard sizes
         ({"size": (100, 100)}, 50, 50),
         ({"size": (150, 100)}, 150, 50),
         ({"size": (100, 150)}, 50, 150),
-        # small sizes
         ({"size": (2, 1)}, 1, 1),
         ({"size": (3, 3)}, 1, 1),
         ({"size": (1, 1)}, 1, 1),
