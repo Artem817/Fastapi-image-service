@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import Form
 from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Literal, Tuple
 
 class ImageID(BaseModel):
     id: int
@@ -26,6 +26,32 @@ class UserResponse(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
+
+class ErrorResponse(BaseModel):
+    detail: str
+
+class StatusMessageResponse(BaseModel):
+    status: str
+    message: str
+
+class UploadResponse(BaseModel):
+    status: Literal["uploaded", "already_uploaded"]
+    file_id: str
+    format: str | None = None
+    size: Tuple[int, int] | None = None
+
+class HealthResponse(BaseModel):
+    redis_status: Literal["online"]
+    value: str
+
+class WatermarkResponse(StatusMessageResponse):
+    opacity: float
+    rotation: int
+    scale: float
+    density: float
+    randomize: bool
+    jitter: float
+    seed: Optional[int] = None
 
 class TokenData(BaseModel):
     username: Optional[str] = None
@@ -99,4 +125,3 @@ class TransformPhotoRequest(ImageID):
     compress: Optional[CompressPhotoRequest]
     change_format: Optional[ChangePhotoRequest]
     filter: Optional[FilterPhotoRequest]
-
