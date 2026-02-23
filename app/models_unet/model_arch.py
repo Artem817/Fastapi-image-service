@@ -1,5 +1,6 @@
 import os
 import urllib.request
+from typing import Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -153,7 +154,7 @@ else:
     model.eval()
 
 
-def get_model():
+def get_loaded_model():
     if not model_ready:
         raise RuntimeError(
             "Background removal model is not loaded. Set MODEL_PATH/ MODEL_URL or place resnet101_unet.pth in app/models_unet/."

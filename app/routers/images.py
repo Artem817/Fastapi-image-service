@@ -8,6 +8,7 @@ from PIL import Image, UnidentifiedImageError
 from fastapi.responses import StreamingResponse
 from starlette.concurrency import run_in_threadpool
 import filetype
+from app.dependencies import get_segmentation_model
 from ..auth import get_current_user
 from ..database import get_redis_binary, get_redis_text
 from ..image_processing import (
@@ -37,7 +38,7 @@ from ..schemas import (
     WatermarkResponse,
 )
 from ..log_root import log_ctx
-import logging
+
 
 Image.MAX_IMAGE_PIXELS = 89478485
 MAX_SIZE = 10 * 1024 * 1024
@@ -414,6 +415,7 @@ async def remove_bg(
     current_user: User = Depends(get_current_user),
     redis_text=Depends(get_redis_text),
     redis_binary=Depends(get_redis_binary),
+    model = Depends(get_segmentation_model),
     ): 
     """
     Remove background from image using ResNet101-UNet model.
@@ -447,7 +449,7 @@ async def remove_bg(
     log.info("request_received")
     file_id, image_bytes = await fetch_active_image(redis_text, redis_binary, current_user.id)
     try:
-        processor = ImageProcessor(RemoveBackground())
+        processor = ImageProcessor(RemoveBackground(model=model))
     except RuntimeError as exc:
         log.warning("model_not_available")
         raise ModelNotAvailableError() from exc
