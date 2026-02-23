@@ -2,7 +2,7 @@ from PIL import Image, ImageOps
 from abc import ABC, abstractmethod
 import io
 import logging
-
+from .models_unet import model_arch
 from .models_unet import model_arch
 from .watermark_tool import WatermarkEngine
 import tempfile
@@ -144,17 +144,23 @@ class ResizeStrategy(ImageProcessingStrategy):
             raise
 
 class RemoveBackground(ImageProcessingStrategy):
-    def __init__(self, model: Optional[torch.nn.Module] = None, device: Optional[str] = None, threshold: float = 0.5):
-        self.model = model or model_arch.get_model()
+    def __init__(self, model: torch.nn.Module = None, device: Optional[str] = None, threshold: float = 0.5):
+        if model is None:
+            self.model = model_arch.get_loaded_model()
+        else:
+            self.model = model
+
         if hasattr(self.model, "eval"):
             self.model.eval()
 
         if device:
             self.device = torch.device(device)
+            if hasattr(self.model, "to"):
+                self.model.to(self.device)
         else:
             try:
                 self.device = next(self.model.parameters()).device
-            except StopIteration:
+            except (StopIteration, AttributeError):
                 self.device = torch.device("cpu")
 
         self.threshold = threshold
