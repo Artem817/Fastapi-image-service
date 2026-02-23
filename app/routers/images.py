@@ -83,6 +83,8 @@ def load_image_info(image_bytes: bytes) -> tuple[str | None, tuple[int, int]]:
         return image.format, image.size
 
 def save_locally(current_user: User, file_id: str, image_bytes: bytes) -> None:
+    if os.getenv("SAVE_LOCAL", "false").lower() != "true":
+        return
     folder_path = "processed_images"
     os.makedirs(folder_path, exist_ok=True)
     filename = f"processed_image_{current_user.id}_{file_id}.png"
