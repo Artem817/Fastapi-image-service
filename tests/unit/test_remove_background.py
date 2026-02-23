@@ -81,14 +81,15 @@ def test_remove_background_regression(threshold):
     strategy = RemoveBackground(threshold=threshold)
     processed_bytes = strategy.process_image(input_bytes)
 
-    result_img = Image.open(io.BytesIO(processed_bytes))
-    
-    if not os.path.exists(EXPECTED_PATH):
-        result_img.save(EXPECTED_PATH)
-        pytest.skip(f"Reference image created at {EXPECTED_PATH}. Please verify it manually.")
+    with Image.open(io.BytesIO(processed_bytes)) as result_img:
+        if not os.path.exists(EXPECTED_PATH):
+            result_img.save(EXPECTED_PATH)
+            pytest.fail(f"Reference image created at {EXPECTED_PATH}. Please verify it and re-run.")
 
-    expected_img = Image.open(EXPECTED_PATH)
+        with Image.open(EXPECTED_PATH) as expected_img:
+            rmse_value = calculate_rmse(result_img, expected_img)
 
-    rmse_value = calculate_rmse(result_img, expected_img)
-    
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
     assert rmse_value < 1.0, f"Image processing drift detected! RMSE: {rmse_value}"
