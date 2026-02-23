@@ -29,7 +29,13 @@ from ..exceptions import (
 )
 from ..models import ImageStore, User
 from ..query_redis_cli import fetch_file_by_user_id
-from ..schemas import WatermarkPhotoRequest
+from ..schemas import (
+    ErrorResponse,
+    StatusMessageResponse,
+    UploadResponse,
+    WatermarkPhotoRequest,
+    WatermarkResponse,
+)
 from ..log_root import log_ctx
 import logging
 
@@ -117,7 +123,16 @@ async def fetch_active_image(redis_text, redis_binary, user_id: int) -> tuple[st
     return file_id, image_bytes
 
 
-@router.post("/upload")
+@router.post(
+    "/upload",
+    response_model=UploadResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        401: {"model": ErrorResponse},
+        413: {"model": ErrorResponse},
+        429: {"model": ErrorResponse},
+    },
+)
 async def upload_image(
     file: UploadFile = File(...),
     redis_text=Depends(get_redis_text),
@@ -200,7 +215,11 @@ async def upload_image(
         "size": image_size,
     }
     
-@router.post("/filter")
+@router.post(
+    "/filter",
+    response_model=StatusMessageResponse,
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}},
+)
 async def filter_image(
     filter_type: str = "normal",
     current_user: User = Depends(get_current_user),
@@ -224,7 +243,11 @@ async def filter_image(
     return {"status": "success", "message": "Image filtered"}
 
 
-@router.post("/resize")
+@router.post(
+    "/resize",
+    response_model=StatusMessageResponse,
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}},
+)
 async def resize_endpoint(
     width: int = 256,
     height: int = 256,
@@ -259,7 +282,11 @@ async def resize_endpoint(
 #         detail="Image clarity feature is not yet implemented",
 #     )
 
-@router.post("/flip")
+@router.post(
+    "/flip",
+    response_model=StatusMessageResponse,
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}},
+)
 async def flip_image(
     direction: str = "horizontal",
     current_user: User = Depends(get_current_user),
@@ -277,7 +304,11 @@ async def flip_image(
     return {"status": "success", "message": "Image flipped"}
 
 
-@router.post("/rotate")
+@router.post(
+    "/rotate",
+    response_model=StatusMessageResponse,
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}},
+)
 async def rotate_image(
     angle: int,
     current_user: User = Depends(get_current_user),
@@ -298,7 +329,11 @@ async def rotate_image(
     return {"status": "success", "message": f"Rotated by {angle}"}
 
 
-@router.post("/watermark")
+@router.post(
+    "/watermark",
+    response_model=WatermarkResponse,
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}},
+)
 async def watermark_image(
     watermark_params: WatermarkPhotoRequest = Depends(WatermarkPhotoRequest.as_form),
     logo_file: UploadFile = File(...),
@@ -365,7 +400,16 @@ async def watermark_image(
     finally:
         Path(logo_path).unlink(missing_ok=True)
 
-@router.post("/remove_bg")
+@router.post(
+    "/remove_bg",
+    response_model=StatusMessageResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        401: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+    },
+)
 async def remove_bg(
     current_user: User = Depends(get_current_user),
     redis_text=Depends(get_redis_text),
@@ -434,7 +478,11 @@ async def export_current_image(
     )
 
 
-@router.delete("/{image_id}")
+@router.delete(
+    "/{image_id}",
+    response_model=StatusMessageResponse,
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}},
+)
 async def delete_image(
     image_id: str,
     current_user: User = Depends(get_current_user),
