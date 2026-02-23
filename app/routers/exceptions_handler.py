@@ -1,17 +1,19 @@
 
-import logging
-
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-
+from ..log_root import log_ctx
 from app.exceptions import AppError
-
-logger = logging.getLogger(__name__)
 
 
 def register_exception_handlers(app: FastAPI):
     @app.exception_handler(AppError)
     async def app_error_handler(request, exc: AppError):
+        log_ctx(
+            endpoint=request.url.path,
+            method=request.method,
+            status_code=exc.status_code,
+            error_type=exc.__class__.__name__,
+        ).warning("app_error")
         return JSONResponse(
             status_code=exc.status_code,
             content={"detail": str(exc)},
@@ -20,7 +22,11 @@ def register_exception_handlers(app: FastAPI):
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request, exc: Exception):
-        logger.error(f"Unhandled: {exc}", exc_info=True)
+        log_ctx(
+            endpoint=request.url.path,
+            method=request.method,
+            error_type=exc.__class__.__name__,
+        ).exception("unhandled_exception")
         return JSONResponse(
             status_code=500, content={"detail": "Internal server error"}
         )

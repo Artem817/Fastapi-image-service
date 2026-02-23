@@ -12,20 +12,28 @@ from .routers.exceptions_handler import register_exception_handlers
 from .routers import health as health_router
 from .routers import images as images_router
 from .routers import users as users_router
+from .log_root import setup_logging
+from .log_root import log_ctx
 
 Base.metadata.create_all(bind=engine)
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+setup_logging()
 
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    log = log_ctx(component="lifespan")
+    log.info("startup_begin")
     app.state.redis = await aioredis.from_url(REDIS_URL, decode_responses=True)
     app.state.redis_binary = await aioredis.from_url(REDIS_URL, decode_responses=False)
+    log.info("startup_complete")
 
     yield
 
+    log.info("shutdown_begin")
     await app.state.redis.close()
     await app.state.redis_binary.close()
+    log.info("shutdown_complete")
 
 
 async def get_user_settings(redis, user_id: int):

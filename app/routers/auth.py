@@ -12,14 +12,18 @@ from ..auth import (
 from ..database import get_db
 from ..models import User
 from ..schemas import Token, UserCreate, UserLogin, UserResponse
-
+from ..log_root import log_ctx
 router = APIRouter(tags=["auth"])
 
 
 @router.post("/register", response_model=UserResponse)
 def register_user(user: UserCreate, db: Session = Depends(get_db)):
+    log = log_ctx(endpoint="register", username=user.username)
+    log.info("request_received")
+
     db_user = db.query(User).filter(User.username == user.username).first()
     if db_user:
+        log.warning("username_already_registered")
         raise HTTPException(
             status_code=400,
             detail="Username already registered",
@@ -30,14 +34,18 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
+    log.info("register_success", extra={"user_id": db_user.id})
 
     return db_user
 
 
 @router.post("/login", response_model=Token)
 def login_user(user_credentials: UserLogin, db: Session = Depends(get_db)):
+    log = log_ctx(endpoint="login", username=user_credentials.username)
+    log.info("request_received")
     user = authenticate_user(db, user_credentials.username, user_credentials.password)
     if not user:
+        log.warning("login_failed")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -49,5 +57,5 @@ def login_user(user_credentials: UserLogin, db: Session = Depends(get_db)):
         data={"sub": user.username},
         expires_delta=access_token_expires,
     )
-
+    log.info("login_success", extra={"user_id": user.id})
     return {"access_token": access_token, "token_type": "bearer"}

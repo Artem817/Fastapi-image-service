@@ -6,8 +6,8 @@ def anyio_backend():
 
 
 @pytest.mark.parametrize("incr_value, filename, content_type, expected_status, expected_msg", [
-    (1, "test_1.jpg", "image/jpeg", 200, "uploaded"),
-    (2, "test_2.jpg", "image/jpeg", 200, "uploaded"),
+    (1, "test_1.png", "image/png", 200, "uploaded"),
+    (2, "test_2.png", "image/png", 200, "uploaded"),
     (3, "test_3.txt", "text/plain", 400, "File must be an image"),
     (4, "large.jpg", "image/jpeg", 413, "File too large"),
     (5, "large_1.jpg", "image/jpeg", 413, "File too large"),
@@ -46,4 +46,20 @@ async def test_upload_image_scenarios(
             mock_redis_t.expire.assert_called_once()
         if incr_value > 5:
             mock_redis_t.ttl.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_upload_rejects_extension_mismatch(
+    ac, shelf_image, mock_redis_t, mock_redis_b, auth_user
+):
+    file_content = shelf_image.getvalue()
+
+    response = await ac.post(
+        "/images/upload",
+        files={"file": ("Screenshot 2026-02-23 at 00.28.10.p", file_content, "application/octet-stream")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "File extension does not match image content"
+    mock_redis_t.incr.assert_called()
         

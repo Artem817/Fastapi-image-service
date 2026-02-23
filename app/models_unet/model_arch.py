@@ -140,16 +140,16 @@ if weights_path and os.path.exists(weights_path):
         model.load_state_dict(state_dict)
         model.eval()
         model_ready = True
-        print("✓ Model loaded successfully and set to eval mode")
+        print("Model loaded successfully and set to eval mode")
     except Exception as e:
         model_ready = False
-        print(f"✗ Error loading model weights: {e}")
-        print(f"  Make sure {weights_path} is a valid PyTorch checkpoint.")
+        print(f"Error loading model weights: {e}")
+        print(f"Make sure {weights_path} is a valid PyTorch checkpoint.")
         model.eval()
 else:
     model_ready = False
-    print("⚠ Model weights unavailable. remove_bg endpoint will not work.")
-    print("  Provide MODEL_PATH or MODEL_URL, or place resnet101_unet.pth next to this file.")
+    print("Model weights s. remove_bg endpoint will not work.")
+    print("Provide MODEL_PATH or MODEL_URL, or place resnet101_unet.pth next to this file.")
     model.eval()
 
 

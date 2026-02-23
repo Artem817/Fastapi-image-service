@@ -82,12 +82,9 @@ class BasicFilterStrategy(ImageProcessingStrategy):
         }
 
     def process_image(self, image_bytes: bytes) -> bytes:
-        try:
-            with Image.open(io.BytesIO(image_bytes)) as image:
-                filtered_image = self._filter_handlers[self.filter_type](image)
-                return output_transform_bytes(filtered_image, image.format)
-        except Exception as e:
-            return image_bytes
+        with Image.open(io.BytesIO(image_bytes)) as image:
+            filtered_image = self._filter_handlers[self.filter_type](image)
+            return output_transform_bytes(filtered_image, image.format)
 
 class ResizeStrategy(ImageProcessingStrategy):
     def __init__(self, width: int = 256, height: int = 256):
@@ -166,11 +163,12 @@ class WatermarkStrategy(ImageProcessingStrategy):
         self.seed = seed
 
     def process_image(self, image_bytes: bytes) -> bytes:
+        tmp_img_path = None
         try:
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_img:
                 tmp_img.write(image_bytes)
                 tmp_img_path = tmp_img.name
-            
+
             engine = WatermarkEngine(
                 opacity=self.opacity,
                 rotation=self.rotation,
@@ -180,16 +178,14 @@ class WatermarkStrategy(ImageProcessingStrategy):
                 jitter=self.jitter,
                 seed=self.seed,
             )
-            
+
             result_image = engine.apply(tmp_img_path, self.logo_path)
-            
+
             with io.BytesIO() as output:
                 result_image.save(output, format="PNG")
                 processed_bytes = output.getvalue()
-            
-            Path(tmp_img_path).unlink()
-            
+
             return processed_bytes
-        except Exception as e:
-            print(f"Watermark error: {e}")
-            return image_bytes
+        finally:
+            if tmp_img_path:
+                Path(tmp_img_path).unlink(missing_ok=True)
