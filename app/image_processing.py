@@ -1,6 +1,7 @@
 from PIL import Image, ImageOps
 from abc import ABC, abstractmethod
 import io
+import logging
 
 from .models_unet import model_arch
 from .watermark_tool import WatermarkEngine
@@ -10,6 +11,9 @@ from typing import Optional
 import torch
 import torchvision.transforms as T
 import numpy as np
+from .log_root import log_ctx
+
+logger = logging.getLogger(__name__)
 
 
 def output_transform_bytes(image: Image.Image, output_format: str) -> bytes:
@@ -26,15 +30,26 @@ class ImageProcessingStrategy(ABC):
     def process_image(self, image_bytes: bytes) -> bytes:
         pass
 
+def processing_log(operation: str, **fields) -> logging.LoggerAdapter:
+    return log_ctx(component="image_processing", operation=operation, **fields)
+
 class RotateImageStrategy(ImageProcessingStrategy):
     def __init__(self, angle: int = 45, output_format: str = "PNG"):
         self.angle = angle % 360
         self.output_format = output_format
 
     def process_image(self, image_bytes: bytes) -> bytes:
-        with Image.open(io.BytesIO(image_bytes)) as image:
-            rotated = image.rotate(self.angle, expand=True)
-            return output_transform_bytes(rotated, self.output_format)
+        log = processing_log("rotate", angle=self.angle, output_format=self.output_format)
+        log.info("processing_start")
+        try:
+            with Image.open(io.BytesIO(image_bytes)) as image:
+                rotated = image.rotate(self.angle, expand=True)
+                processed = output_transform_bytes(rotated, self.output_format)
+            log.info("processing_success")
+            return processed
+        except Exception:
+            log.exception("processing_failed")
+            raise
 
 
 class FlipImageStrategy(ImageProcessingStrategy):
@@ -43,21 +58,37 @@ class FlipImageStrategy(ImageProcessingStrategy):
         self.output_format = output_format
 
     def process_image(self, image_bytes: bytes) -> bytes:
-        with Image.open(io.BytesIO(image_bytes)) as image:
-            if self.direction == "horizontal":
-                flipped_image = image.transpose(Image.FLIP_LEFT_RIGHT)
-            else:
-                flipped_image = image.transpose(Image.FLIP_TOP_BOTTOM)
+        log = processing_log("flip", direction=self.direction, output_format=self.output_format)
+        log.info("processing_start")
+        try:
+            with Image.open(io.BytesIO(image_bytes)) as image:
+                if self.direction == "horizontal":
+                    flipped_image = image.transpose(Image.FLIP_LEFT_RIGHT)
+                else:
+                    flipped_image = image.transpose(Image.FLIP_TOP_BOTTOM)
 
-            return output_transform_bytes(flipped_image, self.output_format)
+                processed = output_transform_bytes(flipped_image, self.output_format)
+            log.info("processing_success")
+            return processed
+        except Exception:
+            log.exception("processing_failed")
+            raise
 
 class ChangeFormatStrategy(ImageProcessingStrategy):
     def __init__(self, target_format: str = "JPEG"):
         self.target_format = target_format.upper() if target_format.upper() in ["JPEG", "PNG", "WEBP"] else "JPEG"
 
     def process_image(self, image_bytes: bytes) -> bytes:
-        with Image.open(io.BytesIO(image_bytes)) as image:
-            return output_transform_bytes(image, self.target_format)
+        log = processing_log("change_format", target_format=self.target_format)
+        log.info("processing_start")
+        try:
+            with Image.open(io.BytesIO(image_bytes)) as image:
+                processed = output_transform_bytes(image, self.target_format)
+            log.info("processing_success")
+            return processed
+        except Exception:
+            log.exception("processing_failed")
+            raise
 
 class ImageProcessor:
     def __init__(self, strategy: ImageProcessingStrategy):
@@ -82,9 +113,17 @@ class BasicFilterStrategy(ImageProcessingStrategy):
         }
 
     def process_image(self, image_bytes: bytes) -> bytes:
-        with Image.open(io.BytesIO(image_bytes)) as image:
-            filtered_image = self._filter_handlers[self.filter_type](image)
-            return output_transform_bytes(filtered_image, image.format)
+        log = processing_log("filter", filter_type=self.filter_type)
+        log.info("processing_start")
+        try:
+            with Image.open(io.BytesIO(image_bytes)) as image:
+                filtered_image = self._filter_handlers[self.filter_type](image)
+                processed = output_transform_bytes(filtered_image, image.format)
+            log.info("processing_success")
+            return processed
+        except Exception as e:
+            log.exception("processing_failed")
+            raise ValueError(f"Failed to apply filter {self.filter_type}") from e
 
 class ResizeStrategy(ImageProcessingStrategy):
     def __init__(self, width: int = 256, height: int = 256):
@@ -92,9 +131,17 @@ class ResizeStrategy(ImageProcessingStrategy):
         self.height = height
 
     def process_image(self, image_bytes: bytes) -> bytes:
-        with Image.open(io.BytesIO(image_bytes)) as image:
-            resized_image = image.resize((self.width, self.height))
-            return output_transform_bytes(resized_image, image.format)
+        log = processing_log("resize", width=self.width, height=self.height)
+        log.info("processing_start")
+        try:
+            with Image.open(io.BytesIO(image_bytes)) as image:
+                resized_image = image.resize((self.width, self.height))
+                processed = output_transform_bytes(resized_image, image.format)
+            log.info("processing_success")
+            return processed
+        except Exception:
+            log.exception("processing_failed")
+            raise
 
 class RemoveBackground(ImageProcessingStrategy):
     def __init__(self, model: Optional[torch.nn.Module] = None, device: Optional[str] = None, threshold: float = 0.5):
@@ -118,28 +165,40 @@ class RemoveBackground(ImageProcessingStrategy):
         ])
 
     def process_image(self, image_bytes):
-        with Image.open(io.BytesIO(image_bytes)) as image:
-            original_img = image.convert("RGB")
-            w, h = original_img.size
+        log = processing_log(
+            "remove_bg",
+            device=str(self.device),
+            threshold=self.threshold,
+        )
+        log.info("processing_start")
+        try:
+            with Image.open(io.BytesIO(image_bytes)) as image:
+                original_img = image.convert("RGB")
+                w, h = original_img.size
 
-            input_tensor = self.transform(original_img).unsqueeze(0).to(self.device)
+                input_tensor = self.transform(original_img).unsqueeze(0).to(self.device)
 
-            with torch.no_grad():
-                logits = self.model(input_tensor)
-                pred_mask = torch.sigmoid(logits).squeeze().cpu().numpy()
+                with torch.no_grad():
+                    logits = self.model(input_tensor)
+                    pred_mask = torch.sigmoid(logits).squeeze().cpu().numpy()
 
-            mask_normalized = (pred_mask * 255).astype("uint8")
-            mask_img = Image.fromarray(mask_normalized).convert("L")
-            resample = getattr(Image, "Resampling", Image).BILINEAR
-            mask_img = mask_img.resize((w, h), resample)
+                mask_normalized = (pred_mask * 255).astype("uint8")
+                mask_img = Image.fromarray(mask_normalized).convert("L")
+                resample = getattr(Image, "Resampling", Image).BILINEAR
+                mask_img = mask_img.resize((w, h), resample)
 
-            cutoff = int(self.threshold * 255)
-            mask_img = mask_img.point(lambda p: 255 if p >= cutoff else 0)
+                cutoff = int(self.threshold * 255)
+                mask_img = mask_img.point(lambda p: 255 if p >= cutoff else 0)
 
-            result_img = original_img.convert("RGBA")
-            result_img.putalpha(mask_img)
+                result_img = original_img.convert("RGBA")
+                result_img.putalpha(mask_img)
 
-            return output_transform_bytes(result_img, "PNG")
+                processed = output_transform_bytes(result_img, "PNG")
+            log.info("processing_success", extra={"width": w, "height": h})
+            return processed
+        except Exception:
+            log.exception("processing_failed")
+            raise
         
 class WatermarkStrategy(ImageProcessingStrategy):
     def __init__(
@@ -163,6 +222,17 @@ class WatermarkStrategy(ImageProcessingStrategy):
         self.seed = seed
 
     def process_image(self, image_bytes: bytes) -> bytes:
+        log = processing_log(
+            "watermark",
+            opacity=self.opacity,
+            rotation=self.rotation,
+            scale_percent=self.scale_percent,
+            density=self.density,
+            randomize=self.randomize,
+            jitter=self.jitter,
+            seed=self.seed,
+        )
+        log.info("processing_start")
         tmp_img_path = None
         try:
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_img:
@@ -185,7 +255,11 @@ class WatermarkStrategy(ImageProcessingStrategy):
                 result_image.save(output, format="PNG")
                 processed_bytes = output.getvalue()
 
+            log.info("processing_success")
             return processed_bytes
+        except Exception:
+            log.exception("processing_failed")
+            raise
         finally:
             if tmp_img_path:
                 Path(tmp_img_path).unlink(missing_ok=True)

@@ -1,4 +1,3 @@
-
 class AppError(Exception):
     """Base domain error with an HTTP status code."""
 
@@ -44,6 +43,14 @@ class InvalidFileError(AppError):
 class ModelNotAvailableError(AppError):
     def __init__(self):
         super().__init__("Model weights not available", status_code=503)
+
+
+class ImageProcessingError(AppError):
+    def __init__(self, message: str, operation: str | None = None):
+        detail = f"Image processing failed: {message}"
+        if operation:
+            detail = f"Image {operation} failed: {message}"
+        super().__init__(detail, status_code=400)
 
 
 class RateLimitExceededError(AppError):

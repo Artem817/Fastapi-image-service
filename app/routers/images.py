@@ -23,6 +23,7 @@ from ..exceptions import (
     AppError,
     ImageNotFoundError,
     InvalidFileError,
+    ImageProcessingError,
     ModelNotAvailableError,
     RateLimitExceededError,
 )
@@ -83,6 +84,8 @@ def load_image_info(image_bytes: bytes) -> tuple[str | None, tuple[int, int]]:
         return image.format, image.size
 
 def save_locally(current_user: User, file_id: str, image_bytes: bytes) -> None:
+    if os.getenv("SAVE_LOCAL", "false").lower() != "true":
+        return
     folder_path = "processed_images"
     os.makedirs(folder_path, exist_ok=True)
     filename = f"processed_image_{current_user.id}_{file_id}.png"
@@ -207,8 +210,14 @@ async def filter_image(
     log = log_ctx(endpoint="filter", user_id=current_user.id, filter_type=filter_type)
     log.info("request_received")
     file_id, image_bytes = await fetch_active_image(redis_text, redis_binary, current_user.id)
-    processor = ImageProcessor(BasicFilterStrategy(filter_type=filter_type))
-    processed_bytes = await run_in_threadpool(processor.process_image, image_bytes)
+    
+    try:
+        processor = ImageProcessor(BasicFilterStrategy(filter_type=filter_type))
+        processed_bytes = await run_in_threadpool(processor.process_image, image_bytes)
+    except ValueError as exc:
+        log.error("filter_processing_failed", extra={"error": str(exc)})
+        raise ImageProcessingError(str(exc), operation="filter") from exc
+    
     await run_in_threadpool(save_locally, current_user, file_id, processed_bytes)
     await redis_binary.set(f"image_data:{file_id}", processed_bytes, ex=3600)
     log.info("processing_success", extra={"file_id": file_id})
