@@ -39,7 +39,7 @@ def log_ctx(**fields) -> logging.LoggerAdapter:
     Get a LoggerAdapter with context fields from the caller's module.
     
     Usage in any file:
-        from app.log_root import log_ctx
+        from app.utility.log.log_root import log_ctx
         
         log = log_ctx(endpoint="upload", user_id=123)
         log.info("request_received")

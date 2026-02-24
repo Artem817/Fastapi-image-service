@@ -1,3 +1,4 @@
+import asyncio
 import io
 import os
 import tempfile
@@ -8,10 +9,11 @@ from PIL import Image, UnidentifiedImageError
 from fastapi.responses import StreamingResponse
 from starlette.concurrency import run_in_threadpool
 import filetype
-from app.dependencies import get_segmentation_model
-from ..auth import get_current_user
-from ..database import get_redis_binary, get_redis_text
-from ..image_processing import (
+from app.services.image_hash import get_image_hash
+from app.utility.dependencies import get_segmentation_model
+from app.auth.auth import get_current_user
+from app.database.database import get_redis_binary, get_redis_text
+from app.services.image_processing import (
     BasicFilterStrategy,
     FlipImageStrategy,
     ImageProcessor,
@@ -20,7 +22,7 @@ from ..image_processing import (
     WatermarkStrategy,
     RemoveBackground,
 )
-from ..exceptions import (
+from app.utility.exceptions.exceptions import (
     AppError,
     ImageNotFoundError,
     InvalidFileError,
@@ -28,16 +30,16 @@ from ..exceptions import (
     ModelNotAvailableError,
     RateLimitExceededError,
 )
-from ..models import ImageStore, User
-from ..query_redis_cli import fetch_file_by_user_id
-from ..schemas import (
+from app.models.models import ImageStore, User
+from app.utility.redis.query_redis_cli import fetch_file_by_user_id
+from app.utility.schemas.schemas import (
     ErrorResponse,
     StatusMessageResponse,
     UploadResponse,
     WatermarkPhotoRequest,
     WatermarkResponse,
 )
-from ..log_root import log_ctx
+from app.utility.log.log_root import log_ctx
 
 
 Image.MAX_IMAGE_PIXELS = 89478485
@@ -269,20 +271,6 @@ async def resize_endpoint(
     log.info("processing_success", extra={"file_id": file_id})
     return {"status": "success", "message": "Image resized"}
 
-
-# FIXME: /images/clarity is not implemented yet. Uncomment when ready.
-# @router.post("/clarity")
-# async def image_clarity(
-#     output_format: str = "PNG",
-#     current_user: User = Depends(get_current_user),
-#     redis_text=Depends(get_redis_text),
-#     redis_binary=Depends(get_redis_binary),
-# ):
-#     raise HTTPException(
-#         status_code=status.HTTP_501_NOT_IMPLEMENTED,
-#         detail="Image clarity feature is not yet implemented",
-#     )
-
 @router.post(
     "/flip",
     response_model=StatusMessageResponse,
@@ -409,14 +397,15 @@ async def watermark_image(
         401: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
         503: {"model": ErrorResponse},
+        504: {"model": ErrorResponse},
     },
 )
 async def remove_bg(
     current_user: User = Depends(get_current_user),
     redis_text=Depends(get_redis_text),
     redis_binary=Depends(get_redis_binary),
-    model = Depends(get_segmentation_model),
-    ): 
+    model=Depends(get_segmentation_model),
+): 
     """
     Remove background from image using ResNet101-UNet model.
     
@@ -432,34 +421,71 @@ async def remove_bg(
         current_user: Current authenticated user
         redis_text: Redis text client for session management
         redis_binary: Redis binary client for image data storage
+        model: Loaded PyTorch segmentation model
         
     Returns:
         dict: Status response with success message or error details
         
     Raises:
         HTTPException: If image not found, processing fails, or model is not loaded
-        
-    Response:
-        {
-            "status": "success",
-            "message": "Background successfully removed"
-        }
     """
     log = log_ctx(endpoint="remove_bg", user_id=current_user.id)
     log.info("request_received")
+    
     file_id, image_bytes = await fetch_active_image(redis_text, redis_binary, current_user.id)
+    img_hash = get_image_hash(image_bytes)
+    log.info("image_fetched", extra={"file_id": file_id, "image_hash": img_hash})
+    
+    cache_key = f"cache:remove_bg:{current_user.id}:{img_hash}"
+    lock_key = f"lock:remove_bg:{current_user.id}:{img_hash}"
+
+    cache_image = await redis_binary.get(cache_key)
+    if cache_image:
+        log.info("cache_hit", extra={"file_id": file_id})
+        await redis_binary.set(f"image_data:{file_id}", cache_image, ex=3600)
+        return {
+            "status": "success",
+            "message": "Background successfully removed (from cache)",
+        }
+    
+    is_locked = await redis_text.set(lock_key, "1", nx=True, ex=60)
+    
+    if not is_locked:
+        log.info("cache_stampede_prevented: waiting for another worker", extra={"file_id": file_id})
+        for _ in range(30):
+            await asyncio.sleep(1)
+            cache_image = await redis_binary.get(cache_key)
+            if cache_image:
+                log.info("cache_hit_after_waiting", extra={"file_id": file_id})
+                await redis_binary.set(f"image_data:{file_id}", cache_image, ex=3600)
+                return {
+                    "status": "success", 
+                    "message": "Background successfully removed (waited for cache)"
+                }
+        
+        log.warning("timeout_waiting_for_lock", extra={"file_id": file_id})
+        raise HTTPException(status_code=504, detail="Timeout waiting for image processing")
+
     try:
-        processor = ImageProcessor(RemoveBackground(model=model))
-    except RuntimeError as exc:
-        log.warning("model_not_available")
-        raise ModelNotAvailableError() from exc
-    processed_bytes = await run_in_threadpool(processor.process_image, image_bytes)
-    await redis_binary.set(f"image_data:{file_id}", processed_bytes, ex=3600)
-    log.info("processing_success", extra={"file_id": file_id})
-    return {
+        try:
+            processor = ImageProcessor(RemoveBackground(model=model))
+        except RuntimeError as exc:
+            log.warning("model_not_available")
+            raise ModelNotAvailableError() from exc
+            
+        log.info("processing_started", extra={"file_id": file_id})
+        processed_bytes = await run_in_threadpool(processor.process_image, image_bytes)
+        
+        await redis_binary.setex(cache_key, 86400, processed_bytes)
+        await redis_binary.set(f"image_data:{file_id}", processed_bytes, ex=3600)
+        log.info("processing_success", extra={"file_id": file_id})
+        
+        return {
             "status": "success",
             "message": "Background successfully removed",
         }
+    finally:
+        await redis_text.delete(lock_key)
 
 
 @router.get("/export")

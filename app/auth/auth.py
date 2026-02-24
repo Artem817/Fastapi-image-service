@@ -6,10 +6,10 @@ from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-from .database import get_db, settings
-from .log_root import log_ctx
-from .models import User
-from .schemas import TokenData
+from app.database.database import get_db, settings
+from app.models.models import User
+from app.utility.log.log_root import log_ctx
+from app.utility.schemas.schemas import TokenData
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()

@@ -7,15 +7,15 @@ from redis import asyncio as aioredis
 
 from app.models_unet import model_arch
 
-from .database import engine
-from .models import Base
-from .routers import auth as auth_router
-from .routers.exceptions_handler import register_exception_handlers
-from .routers import health as health_router
-from .routers import images as images_router
-from .routers import users as users_router
-from .log_root import setup_logging
-from .log_root import log_ctx
+from app.database.database import engine
+from app.models.models import Base
+from app.routers import auth as auth_router
+from app.routers.exceptions_handler import register_exception_handlers
+from app.routers import health as health_router
+from app.routers import images as images_router
+from app.routers import users as users_router
+from app.utility.log.log_root import setup_logging
+from app.utility.log.log_root import log_ctx
 from fastapi import Request
 
 Base.metadata.create_all(bind=engine)

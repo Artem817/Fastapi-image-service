@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends
-from ..database import get_redis_text
-from ..exceptions import AppError
-from ..log_root import log_ctx
-from ..schemas import ErrorResponse, HealthResponse
+from app.database.database import get_redis_text
+from app.utility.exceptions.exceptions import AppError
+from app.utility.log.log_root import log_ctx
+from app.utility.schemas.schemas import ErrorResponse, HealthResponse
 
 router = APIRouter(tags=["health"])
 

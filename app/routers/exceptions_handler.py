@@ -1,8 +1,8 @@
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-from ..log_root import log_ctx
-from app.exceptions import AppError
+from app.utility.exceptions.exceptions import AppError
+from app.utility.log.log_root import log_ctx
 
 
 def register_exception_handlers(app: FastAPI):
