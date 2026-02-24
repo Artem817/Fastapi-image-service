@@ -31,6 +31,9 @@ def run_migrations_offline():
 def run_migrations_online():
     url = config.get_main_option("sqlalchemy.url")
 
+    if url is None:
+        raise ValueError("Database URL not found in configuration")
+    
     connectable = create_engine(
         url,
         poolclass=pool.NullPool,

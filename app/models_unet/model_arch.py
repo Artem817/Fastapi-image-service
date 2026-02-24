@@ -1,5 +1,6 @@
 import os
 import urllib.request
+import urllib.error
 from typing import Optional
 import torch
 import torch.nn as nn

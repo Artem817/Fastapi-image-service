@@ -67,7 +67,7 @@ async def get_current_user(
             settings.secret_key,
             algorithms=[settings.algorithm]
         )
-        username: str = payload.get("sub")
+        username = payload.get("sub")
         if username is None:
             log.warning("token_missing_subject")
             raise credentials_exception
