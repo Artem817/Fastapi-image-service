@@ -27,8 +27,8 @@ warnings.filterwarnings(
 )
 
 from app.main import app
-from app.database import get_redis_text, get_redis_binary
-from app.auth import get_current_user
+from app.database.database import get_redis_text, get_redis_binary
+from app.auth.auth import get_current_user
 
 @pytest.fixture
 async def ac():

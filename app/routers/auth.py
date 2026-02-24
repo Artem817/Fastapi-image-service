@@ -3,16 +3,16 @@ from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from ..auth import (
+from app.auth.auth import (
     authenticate_user,
     create_access_token,
     get_password_hash,
     settings,
 )
-from ..database import get_db
-from ..models import User
-from ..schemas import Token, UserCreate, UserLogin, UserResponse
-from ..log_root import log_ctx
+from app.database.database import get_db
+from app.models.models import User
+from app.utility.schemas.schemas import Token, UserCreate, UserLogin, UserResponse
+from app.utility.log.log_root import log_ctx
 router = APIRouter(tags=["auth"])
 
 
