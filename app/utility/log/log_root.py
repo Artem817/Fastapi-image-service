@@ -1,7 +1,13 @@
-import logging
 import inspect
+import logging
 from datetime import datetime, timezone
-from pythonjsonlogger import jsonlogger
+
+try:
+    from pythonjsonlogger.json import JsonFormatter
+except ImportError:  # pragma: no cover
+    from pythonjsonlogger import jsonlogger
+
+    JsonFormatter = jsonlogger.JsonFormatter # type: ignore
 
 
 class ContextLoggerAdapter(logging.LoggerAdapter):
@@ -26,7 +32,7 @@ def setup_logging():
     log_handler = logging.StreamHandler()
     log_handler.addFilter(UtcTimestampFilter())
 
-    formatter = jsonlogger.JsonFormatter(
+    formatter = JsonFormatter(
         "%(timestamp)s %(levelname)s %(name)s %(message)s"
     )
 

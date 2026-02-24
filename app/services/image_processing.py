@@ -1,15 +1,17 @@
-from PIL import Image, ImageOps
-from abc import ABC, abstractmethod
 import io
 import logging
-from app.models_unet import model_arch
-from app.services.watermark_tool import WatermarkEngine
 import tempfile
 from pathlib import Path
 from typing import Optional
+
+from abc import ABC, abstractmethod
+from PIL import Image, ImageOps
 import torch
 import torchvision.transforms as T
 import numpy as np
+
+from app.models_unet import model_arch
+from app.services.watermark_tool import WatermarkEngine
 from app.utility.log.log_root import log_ctx
 
 logger = logging.getLogger(__name__)
@@ -61,9 +63,9 @@ class FlipImageStrategy(ImageProcessingStrategy):
         try:
             with Image.open(io.BytesIO(image_bytes)) as image:
                 if self.direction == "horizontal":
-                    flipped_image = image.transpose(Image.FLIP_LEFT_RIGHT)
+                    flipped_image = image.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
                 else:
-                    flipped_image = image.transpose(Image.FLIP_TOP_BOTTOM)
+                    flipped_image = image.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
 
                 processed = output_transform_bytes(flipped_image, self.output_format)
             log.info("processing_success")
@@ -116,7 +118,7 @@ class BasicFilterStrategy(ImageProcessingStrategy):
         try:
             with Image.open(io.BytesIO(image_bytes)) as image:
                 filtered_image = self._filter_handlers[self.filter_type](image)
-                processed = output_transform_bytes(filtered_image, image.format)
+                processed = output_transform_bytes(filtered_image, image.format or "PNG")
             log.info("processing_success")
             return processed
         except Exception as e:
@@ -134,7 +136,7 @@ class ResizeStrategy(ImageProcessingStrategy):
         try:
             with Image.open(io.BytesIO(image_bytes)) as image:
                 resized_image = image.resize((self.width, self.height))
-                processed = output_transform_bytes(resized_image, image.format)
+                processed = output_transform_bytes(resized_image, image.format or "PNG")
             log.info("processing_success")
             return processed
         except Exception:
@@ -142,7 +144,7 @@ class ResizeStrategy(ImageProcessingStrategy):
             raise
 
 class RemoveBackground(ImageProcessingStrategy):
-    def __init__(self, model: torch.nn.Module = None, device: Optional[str] = None, threshold: float = 0.5):
+    def __init__(self, model: Optional[torch.nn.Module] = None, device: Optional[str] = None, threshold: float = 0.5):
         if model is None:
             self.model = model_arch.get_loaded_model()
         else:
@@ -180,7 +182,7 @@ class RemoveBackground(ImageProcessingStrategy):
                 original_img = image.convert("RGB")
                 w, h = original_img.size
 
-                input_tensor = self.transform(original_img).unsqueeze(0).to(self.device)
+                input_tensor = self.transform(original_img).unsqueeze(0).to(self.device)  # type: ignore
 
                 with torch.no_grad():
                     logits = self.model(input_tensor)
@@ -188,11 +190,11 @@ class RemoveBackground(ImageProcessingStrategy):
 
                 mask_normalized = (pred_mask * 255).astype("uint8")
                 mask_img = Image.fromarray(mask_normalized).convert("L")
-                resample = getattr(Image, "Resampling", Image).BILINEAR
+                resample = Image.Resampling.BILINEAR if hasattr(Image, "Resampling") else Image.BILINEAR  # type: ignore
                 mask_img = mask_img.resize((w, h), resample)
 
                 cutoff = int(self.threshold * 255)
-                mask_img = mask_img.point(lambda p: 255 if p >= cutoff else 0)
+                mask_img = mask_img.point(lambda p: 255 if p >= cutoff else 0) # type: ignore
 
                 result_img = original_img.convert("RGBA")
                 result_img.putalpha(mask_img)
@@ -247,7 +249,7 @@ class WatermarkStrategy(ImageProcessingStrategy):
                 opacity=self.opacity,
                 rotation=self.rotation,
                 scale_percent=self.scale_percent,
-                density=self.density,
+                density=int(self.density),
                 randomize=self.randomize,
                 jitter=self.jitter,
                 seed=self.seed,

@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from app.utility.exceptions.exceptions import AppError
