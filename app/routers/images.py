@@ -4,12 +4,14 @@ import os
 import tempfile
 from io import BytesIO
 from pathlib import Path
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from PIL import Image, UnidentifiedImageError
 from fastapi.responses import StreamingResponse
+from rsa import verify
 from starlette.concurrency import run_in_threadpool
 import filetype
 from app.services.image_hash import get_image_hash
+from app.utility.constants import ASPECT_RATIO_MAP, EXTENSION_TO_MIME, IMAGE_EXTENSION_ALIASES, MAX_SIZE, PIL_FORMAT_TO_EXTENSION, AspectRatio
 from app.utility.dependencies import get_segmentation_model
 from app.auth.auth import get_current_user
 from app.database.database import get_redis_binary, get_redis_text
@@ -40,15 +42,7 @@ from app.utility.schemas.schemas import (
     WatermarkResponse,
 )
 from app.utility.log.log_root import log_ctx
-
-
-Image.MAX_IMAGE_PIXELS = 89478485
-MAX_SIZE = 10 * 1024 * 1024
-IMAGE_EXTENSION_ALIASES = {
-    "jpeg": "jpg",
-    "jpe": "jpg",
-    "tiff": "tif",
-}
+from app.utility.image_validation_helper import validate_image_file
 
 router = APIRouter(prefix="/images", tags=["images"])
 
@@ -104,12 +98,20 @@ def save_locally(current_user: User, file_id: str, image_bytes: bytes) -> None:
         f.write(image_bytes)
 
 def guess_media_type(data: bytes):
-    if data.startswith(b'\xff\xd8\xff'):
-        return "image/jpeg", "jpg"
-    elif data.startswith(b'\x89PNG\r\n\x1a\n'):
-        return "image/png", "png"
-    elif data.startswith(b'GIF87a') or data.startswith(b'GIF89a'):
-        return "image/gif", "gif"
+    kind = filetype.guess(data)
+    if kind and kind.mime and kind.mime.startswith("image/"):
+        detected_ext = normalize_extension(kind.extension)
+        return kind.mime, detected_ext or "bin"
+
+    try:
+        with Image.open(BytesIO(data)) as image:
+            fmt = (image.format or "").upper()
+            detected_ext = normalize_extension(PIL_FORMAT_TO_EXTENSION.get(fmt))
+            if detected_ext:
+                return EXTENSION_TO_MIME.get(detected_ext, "application/octet-stream"), detected_ext
+    except Exception:
+        pass
+
     return "application/octet-stream", "bin"
 
 async def fetch_active_image(redis_text, redis_binary, user_id: int) -> tuple[str, bytes]:
@@ -124,7 +126,6 @@ async def fetch_active_image(redis_text, redis_binary, user_id: int) -> tuple[st
     if not image_bytes:
         raise ImageNotFoundError(file_id=file_id, detail="Image data lost")
     return file_id, image_bytes
-
 
 @router.post(
     "/upload",
@@ -165,7 +166,7 @@ async def upload_image(
     if len(image_bytes) > MAX_SIZE:
         log.warning("file_too_large", extra={"size_bytes": len(image_bytes)})
         raise HTTPException(status_code=413, detail="File too large")
-
+    validation_task = asyncio.create_task(run_in_threadpool(validate_image_file, image_bytes))
     try:
         image_format, image_size = await run_in_threadpool(load_image_info, image_bytes)
     except (UnidentifiedImageError, OSError) as exc:
@@ -178,23 +179,39 @@ async def upload_image(
         log.warning("invalid_image_file")
         raise InvalidFileError("Invalid image file") from exc
 
-    kind = filetype.guess(image_bytes)
-    if kind is None:
-        log.warning("invalid_image_signature", extra={"content_type": content_type})
-        raise InvalidFileError("File must be an image")
-    
-    if not kind.mime or not kind.mime.startswith("image/"):
-        log.warning("invalid_mime_type", extra={"detected_mime": kind.mime if kind else None})
-        raise InvalidFileError("File must be an image")
+    if image_size[0] > 8000 or image_size[1] > 8000:
+        log.warning("image_too_large_dimensions", extra={"size": image_size})
+        raise InvalidFileError("Image dimensions exceed 8000x8000")
 
+    kind = filetype.guess(image_bytes)
+    is_valid = await validation_task
     filename_ext = get_filename_extension(file.filename)
-    detected_ext = normalize_extension(kind.extension)
-    if filename_ext and (not detected_ext or filename_ext != detected_ext):
-        log.warning(
-            "extension_mismatch",
-            extra={"filename_ext": filename_ext, "detected_ext": detected_ext},
-        )
-        raise InvalidFileError("File extension does not match image content")
+    if kind is None:
+        if not is_valid:
+            log.warning("invalid_image_signature")
+            raise InvalidFileError("File must be an image")
+        detected_ext = normalize_extension(PIL_FORMAT_TO_EXTENSION.get((image_format or "").upper()))
+        if filename_ext and detected_ext and filename_ext != detected_ext:
+            log.warning(
+                "extension_mismatch",
+                extra={"filename_ext": filename_ext, "detected_ext": detected_ext},
+            )
+            raise InvalidFileError("File extension does not match image content")
+    else:
+        if not kind.mime or not kind.mime.startswith("image/"):
+            log.warning(
+                "invalid_mime_type",
+                extra={"detected_mime": kind.mime if kind else None},
+            )
+            raise InvalidFileError("File must be an image")
+
+        detected_ext = normalize_extension(kind.extension)
+        if filename_ext and (not detected_ext or filename_ext != detected_ext):
+            log.warning(
+                "extension_mismatch",
+                extra={"filename_ext": filename_ext, "detected_ext": detected_ext},
+            )
+            raise InvalidFileError("File extension does not match image content")
 
     img_store = ImageStore()
     file_id = str(img_store.id)
@@ -245,32 +262,46 @@ async def filter_image(
     log.info("processing_success", extra={"file_id": file_id})
     return {"status": "success", "message": "Image filtered"}
 
-
-@router.post(
-    "/resize",
-    response_model=StatusMessageResponse,
-    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}},
-)
+@router.post("/resize", response_model=StatusMessageResponse)
 async def resize_endpoint(
-    width: int = 256,
-    height: int = 256,
+    ratio: AspectRatio = Query(AspectRatio.RATIO_1_1),
+    base_width: int = Query(1024, ge=128, le=2048),
     current_user: User = Depends(get_current_user),
     redis_text=Depends(get_redis_text),
     redis_binary=Depends(get_redis_binary),
 ):
-    log = log_ctx(endpoint="resize", user_id=current_user.id, width=width, height=height)
-    log.info("request_received")
+    """
+    Resize the active image to a specified aspect ratio and base width.
+    
+    • 16:9 — standard for HD video, monitors, YouTube (widescreen format).\n
+    • 4:3 — classic for older TVs, photos (more square).\n
+    • 1:1 — square, for Instagram Stories or avatars.\n
+    • 21:9 — ultra-wide for cinema or gaming monitors.\n
+    • 4:5 or 2:3 — portrait for social media.\n
+    • 9:16 — vertical for mobile Stories, TikTok.\n
+    """
+    log = log_ctx(endpoint="resize", user_id=current_user.id, base_width=base_width, ratio=ratio.value)
+    
     file_id, image_bytes = await fetch_active_image(redis_text, redis_binary, current_user.id)
-    processor = ImageProcessor(ResizeStrategy(width=width, height=height))
+    log.info("request_received")
+    
+    if not image_bytes:
+        raise HTTPException(status_code=404, detail="No active image found")
 
-    processed_bytes = await run_in_threadpool(processor.process_image, image_bytes)
+    try:
+        strategy = ResizeStrategy(ratio_enum=ratio, req_width=base_width)
+        processor = ImageProcessor(strategy)
+        
+        processed_bytes = await run_in_threadpool(processor.process_image, image_bytes)
+        
+    except (ValueError, OSError) as exc:
+        log.error("resize_processing_failed", extra={"error": str(exc)})
+        raise ImageProcessingError(str(exc), operation="resize") from exc
 
-    await run_in_threadpool(save_locally, current_user, file_id, processed_bytes)
     await redis_binary.set(f"image_data:{file_id}", processed_bytes, ex=3600)
-
+    
     log.info("processing_success", extra={"file_id": file_id})
-    return {"status": "success", "message": "Image resized"}
-
+    return {"status": "success", "message": f"Image resized to {ratio.value}"}
 @router.post(
     "/flip",
     response_model=StatusMessageResponse,
@@ -487,7 +518,6 @@ async def remove_bg(
     finally:
         await redis_text.delete(lock_key)
 
-
 @router.get("/export")
 async def export_current_image(
     current_user: User = Depends(get_current_user),
@@ -504,7 +534,6 @@ async def export_current_image(
         media_type=content_type,
         headers={"Content-Disposition": f"attachment; filename={file_id}.{extension}"}
     )
-
 
 @router.delete(
     "/{image_id}",

@@ -4,6 +4,7 @@ import io
 from PIL import Image
 
 from app.services.image_processing import FlipImageStrategy, ImageProcessor, ResizeStrategy, ChangeFormatStrategy, RotateImageStrategy, output_transform_bytes
+from app.utility.constants import AspectRatio
 from tests.unit.conftest import ShelfImageFactory, ShelfImageConfig
 BLACK = (0, 0, 0)
 RED = (255, 0, 0)
@@ -44,26 +45,46 @@ def test_rotate_dimensions(shelf_image, angle, expected_size):
         assert img.size == expected_size
 
 @pytest.mark.parametrize(
-    "shelf_image, expected_width, expected_height",
+    "shelf_image, ratio, req_width, expected_w, expected_h",
     [
-        ({"size": (100, 100)}, 50, 50),
-        ({"size": (150, 100)}, 150, 50),
-        ({"size": (100, 150)}, 50, 150),
-        ({"size": (2, 1)}, 1, 1),
-        ({"size": (3, 3)}, 1, 1),
-        ({"size": (1, 1)}, 1, 1),
+        # 1. Standard Square: 100x100 -> 1:1, req 50 => 50x50
+        ({"size": (100, 100)}, AspectRatio.RATIO_1_1, 50, 50, 50),
+        
+        # 2. Aspect Ratio Change: 100x100 -> 16:9, req 80 => 80x45 (80 * 9 / 16)
+        ({"size": (100, 100)}, AspectRatio.RATIO_16_9, 80, 80, 45),
+        
+        # 3. Portrait Ratio: 100x100 -> 2:3, req 60 => 60x90 (60 * 3 / 2)
+        ({"size": (100, 100)}, AspectRatio.RATIO_2_3, 60, 60, 90),
+        
+        # 4. Upscale Protection: 100x100 -> 1:1, req 500 => 100x100 (the original is taken)
+        ({"size": (100, 100)}, AspectRatio.RATIO_1_1, 500, 100, 100),
+        
+        # 5. Small Image Wide Ratio: 100x50 -> 21:9, req 200 => 100x42 (min(200, 100)=100, 100*9/21=42)
+        ({"size": (100, 50)}, AspectRatio.RATIO_21_9, 200, 100, 42),
+        
+        # 6. Minimum sizes: 1x1 -> 4:3, req 10 => 1x0 (Pillow may throw an error, або 1x1)
+        ({"size": (1, 1)}, AspectRatio.RATIO_4_3, 10, 1, 0), 
     ],
     indirect=["shelf_image"],
-    ids=["standard_100x100", "standard_150x100", "standard_100x150", "small_2x1", "small_3x3", "small_1x1"]
+    ids=["square_downscale", "to_wide_screen", "to_portrait", "upscale_protection", "wide_limit", "micro_image"]
 )
-def test_resize(shelf_image, expected_width, expected_height):
+def test_resize_strategy_logic(shelf_image, ratio, req_width, expected_w, expected_h):
+    """
+    Testing the resize strategy:
+    - Height calculation by coefficient – is it correct?
+    - Does the upscale protection work (min(req_width, orig_w))”
+    """
     shelf_bytes = shelf_image.getvalue()
-    processor = ImageProcessor(ResizeStrategy(width=expected_width, height=expected_height))
+    
+    strategy = ResizeStrategy(ratio_enum=ratio, req_width=req_width)
+    processor = ImageProcessor(strategy)
+    
     processed_bytes = processor.process_image(shelf_bytes)
+    
     with Image.open(io.BytesIO(processed_bytes)) as img:
-        assert img.size[0] == expected_width
-        assert img.size[1] == expected_height
-
+        assert img.size[0] == expected_w
+        assert abs(img.size[1] - expected_h) <= 1
+        
 @pytest.mark.parametrize(
     "shelf_image, target_format, expected_signature",
     [

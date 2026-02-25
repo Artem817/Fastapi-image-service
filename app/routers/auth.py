@@ -26,6 +26,7 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
         log.warning("username_already_registered")
         raise HTTPException(
             status_code=400,
+            status=status.HTTP_400_BAD_REQUEST,
             detail="Username already registered",
         )
 

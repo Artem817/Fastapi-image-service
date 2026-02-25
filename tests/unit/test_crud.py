@@ -23,7 +23,7 @@ async def test_upload_image_scenarios(
     mock_redis_t.ttl.return_value = 120 if incr_value > 5 else 0
     
     if expected_status == 413:
-        file_content = b"0" * (10 * 1024 * 1024 + 1)
+        file_content = b"0" * (20 * 1024 * 1024 + 1)
     elif expected_status == 400:
         file_content = b"not an image content"
     else:
@@ -38,7 +38,9 @@ async def test_upload_image_scenarios(
         assert res_data["status"] == expected_msg
         mock_redis_b.set.assert_called_once()
     else:
+        assert res_data["status_code"] == expected_status
         assert res_data["detail"] == expected_msg
+        assert "error_code" in res_data and res_data["error_code"]
         
     if expected_status != 400:
         mock_redis_t.incr.assert_called()
