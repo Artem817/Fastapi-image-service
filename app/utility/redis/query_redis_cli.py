@@ -1,5 +1,5 @@
 from fastapi import HTTPException
-from app.utility.log.log_root import log_ctx
+from ..log.log_root import log_ctx
 
 
 async def fetch_file_by_user_id(redis_cli, user_id: int) -> str:

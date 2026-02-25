@@ -6,7 +6,7 @@ import pytest
 import torch
 from PIL import Image
 
-from app.image_processing import ImageProcessor, RemoveBackground
+from app.services.image_processing import ImageProcessor, RemoveBackground
 
 FIXTURE_DIR = os.path.join(os.path.dirname(__file__), "fixtures")
 INPUT_PATH = os.path.join(FIXTURE_DIR, "sample_input.jpg")

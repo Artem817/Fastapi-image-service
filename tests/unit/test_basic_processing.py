@@ -3,7 +3,7 @@ import pytest
 import io
 from PIL import Image
 
-from app.image_processing import FlipImageStrategy, ImageProcessor, ResizeStrategy, ChangeFormatStrategy, RotateImageStrategy, output_transform_bytes
+from app.services.image_processing import FlipImageStrategy, ImageProcessor, ResizeStrategy, ChangeFormatStrategy, RotateImageStrategy, output_transform_bytes
 from tests.unit.conftest import ShelfImageFactory, ShelfImageConfig
 BLACK = (0, 0, 0)
 RED = (255, 0, 0)

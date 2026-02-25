@@ -76,6 +76,10 @@ async def get_current_user(
         log.warning("token_invalid")
         raise credentials_exception
 
+    if token_data.username is None:
+        log.warning("token_missing_username")
+        raise credentials_exception
+    
     user = get_user_by_username(db, username=token_data.username)
     if user is None:
         log.warning("token_user_not_found", extra={"username": token_data.username})
