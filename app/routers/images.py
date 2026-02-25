@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from PIL import Image, UnidentifiedImageError
 from fastapi.responses import StreamingResponse
+from rsa import verify
 from starlette.concurrency import run_in_threadpool
 import filetype
 from app.services.image_hash import get_image_hash
@@ -40,6 +41,7 @@ from app.utility.schemas.schemas import (
     WatermarkResponse,
 )
 from app.utility.log.log_root import log_ctx
+from app.utility.image_validation_helper import validate_image_file
 
 
 Image.MAX_IMAGE_PIXELS = 89478485
@@ -48,6 +50,15 @@ IMAGE_EXTENSION_ALIASES = {
     "jpeg": "jpg",
     "jpe": "jpg",
     "tiff": "tif",
+}
+PIL_FORMAT_TO_EXTENSION = {
+    "JPEG": "jpg",
+    "JPG": "jpg",
+    "PNG": "png",
+    "GIF": "gif",
+    "WEBP": "webp",
+    "TIFF": "tif",
+    "BMP": "bmp",
 }
 
 router = APIRouter(prefix="/images", tags=["images"])
@@ -165,7 +176,7 @@ async def upload_image(
     if len(image_bytes) > MAX_SIZE:
         log.warning("file_too_large", extra={"size_bytes": len(image_bytes)})
         raise HTTPException(status_code=413, detail="File too large")
-
+    validation_task = asyncio.create_task(run_in_threadpool(validate_image_file, image_bytes))
     try:
         image_format, image_size = await run_in_threadpool(load_image_info, image_bytes)
     except (UnidentifiedImageError, OSError) as exc:
@@ -179,22 +190,34 @@ async def upload_image(
         raise InvalidFileError("Invalid image file") from exc
 
     kind = filetype.guess(image_bytes)
-    if kind is None:
-        log.warning("invalid_image_signature", extra={"content_type": content_type})
-        raise InvalidFileError("File must be an image")
-    
-    if not kind.mime or not kind.mime.startswith("image/"):
-        log.warning("invalid_mime_type", extra={"detected_mime": kind.mime if kind else None})
-        raise InvalidFileError("File must be an image")
-
+    is_valid = await validation_task
     filename_ext = get_filename_extension(file.filename)
-    detected_ext = normalize_extension(kind.extension)
-    if filename_ext and (not detected_ext or filename_ext != detected_ext):
-        log.warning(
-            "extension_mismatch",
-            extra={"filename_ext": filename_ext, "detected_ext": detected_ext},
-        )
-        raise InvalidFileError("File extension does not match image content")
+    if kind is None:
+        if not is_valid:
+            log.warning("invalid_image_signature")
+            raise InvalidFileError("File must be an image")
+        detected_ext = normalize_extension(PIL_FORMAT_TO_EXTENSION.get((image_format or "").upper()))
+        if filename_ext and detected_ext and filename_ext != detected_ext:
+            log.warning(
+                "extension_mismatch",
+                extra={"filename_ext": filename_ext, "detected_ext": detected_ext},
+            )
+            raise InvalidFileError("File extension does not match image content")
+    else:
+        if not kind.mime or not kind.mime.startswith("image/"):
+            log.warning(
+                "invalid_mime_type",
+                extra={"detected_mime": kind.mime if kind else None},
+            )
+            raise InvalidFileError("File must be an image")
+
+        detected_ext = normalize_extension(kind.extension)
+        if filename_ext and (not detected_ext or filename_ext != detected_ext):
+            log.warning(
+                "extension_mismatch",
+                extra={"filename_ext": filename_ext, "detected_ext": detected_ext},
+            )
+            raise InvalidFileError("File extension does not match image content")
 
     img_store = ImageStore()
     file_id = str(img_store.id)

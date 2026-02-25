@@ -42,8 +42,9 @@ async def lifespan(app: FastAPI):
             app.state.segmentation_model.eval()
         log.info("model_loading_complete")
     except Exception as e:
-        log.exception("model_loading_failed", extra={"error": str(e)})
-        raise RuntimeError("Failed to load ML model") from e
+        # Keep the API usable even when weights are missing; /remove_bg will return 503.
+        app.state.segmentation_model = None
+        log.warning("model_loading_skipped", extra={"error": str(e)})
 
     yield
 
