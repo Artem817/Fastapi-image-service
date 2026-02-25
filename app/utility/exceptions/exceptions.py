@@ -7,10 +7,12 @@ class AppError(Exception):
         *,
         status_code: int = 400,
         headers: dict[str, str] | None = None,
+        error_code: str | None = None,
     ):
         self.message = message or "Application error"
         self.status_code = status_code
         self.headers = headers
+        self.error_code = error_code or self.__class__.__name__.upper()
         super().__init__(self.message)
 
     def __str__(self) -> str:
@@ -26,7 +28,7 @@ class ImageNotFoundError(AppError):
         self.user_id = user_id
         self.file_id = file_id
         message = detail or self._build_message()
-        super().__init__(message, status_code=404)
+        super().__init__(message, status_code=404, error_code="IMAGE_NOT_FOUND")
 
     def _build_message(self) -> str:
         if self.file_id:
@@ -38,11 +40,11 @@ class ImageNotFoundError(AppError):
 
 class InvalidFileError(AppError):
     def __init__(self, message: str):
-        super().__init__(message, status_code=400)
+        super().__init__(message, status_code=400, error_code="INVALID_IMAGE_FORMAT")
         
 class ModelNotAvailableError(AppError):
     def __init__(self):
-        super().__init__("Model weights not available", status_code=503)
+        super().__init__("Model weights not available", status_code=503, error_code="MODEL_NOT_AVAILABLE")
 
 
 class ImageProcessingError(AppError):
@@ -50,7 +52,7 @@ class ImageProcessingError(AppError):
         detail = f"Image processing failed: {message}"
         if operation:
             detail = f"Image {operation} failed: {message}"
-        super().__init__(detail, status_code=400)
+        super().__init__(detail, status_code=400, error_code="IMAGE_PROCESSING_FAILED")
 
 
 class RateLimitExceededError(AppError):
@@ -63,4 +65,5 @@ class RateLimitExceededError(AppError):
             ),
             status_code=429,
             headers={"Retry-After": str(safe_retry_after)},
+            error_code="RATE_LIMIT_EXCEEDED",
         )

@@ -28,6 +28,8 @@ class Token(BaseModel):
     token_type: str
 
 class ErrorResponse(BaseModel):
+    status_code: int
+    error_code: str
     detail: str
 
 class StatusMessageResponse(BaseModel):

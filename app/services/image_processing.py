@@ -12,6 +12,7 @@ import numpy as np
 
 from app.models_unet import model_arch
 from app.services.watermark_tool import WatermarkEngine
+from app.utility.constants import ASPECT_RATIO_MAP, AspectRatio
 from app.utility.log.log_root import log_ctx
 
 logger = logging.getLogger(__name__)
@@ -126,23 +127,32 @@ class BasicFilterStrategy(ImageProcessingStrategy):
             raise ValueError(f"Failed to apply filter {self.filter_type}") from e
 
 class ResizeStrategy(ImageProcessingStrategy):
-    def __init__(self, width: int = 256, height: int = 256):
-        self.width = width
-        self.height = height
+    def __init__(self, ratio_enum: AspectRatio, req_width: int):
+        self.ratio_enum = ratio_enum
+        self.req_width = req_width
 
     def process_image(self, image_bytes: bytes) -> bytes:
-        log = processing_log("resize", width=self.width, height=self.height)
+        img = Image.open(io.BytesIO(image_bytes))
+        orig_w, orig_h = img.size
+        w_factor, h_factor = ASPECT_RATIO_MAP[self.ratio_enum]
+        
+        target_width = min(self.req_width, orig_w)
+        target_width = max(1, target_width)
+
+        target_height = max(1, int((target_width * h_factor) / w_factor))
+
+        log = processing_log("resize", width=target_width, height=target_height)
         log.info("processing_start")
+
         try:
-            with Image.open(io.BytesIO(image_bytes)) as image:
-                resized_image = image.resize((self.width, self.height))
-                processed = output_transform_bytes(resized_image, image.format or "PNG")
+            resized_img = ImageOps.fit(img, (target_width, target_height), centering=(0.5, 0.5))
+            processed = output_transform_bytes(resized_img, resized_img.format or "PNG")
+            
             log.info("processing_success")
             return processed
         except Exception:
             log.exception("processing_failed")
             raise
-
 class RemoveBackground(ImageProcessingStrategy):
     def __init__(self, model: Optional[torch.nn.Module] = None, device: Optional[str] = None, threshold: float = 0.5):
         if model is None:
