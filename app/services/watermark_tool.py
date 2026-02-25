@@ -63,8 +63,8 @@ class WatermarkEngine:
         aspect_ratio = logo.height / logo.width
         target_logo_h = max(1, int(target_logo_w * aspect_ratio))
 
-        logo_base_resized = logo.convert("RGB").resize((target_logo_w, target_logo_h), Image.LANCZOS)
-        logo_resized = logo_colored.resize((target_logo_w, target_logo_h), Image.LANCZOS)
+        logo_base_resized = logo.convert("RGB").resize((target_logo_w, target_logo_h), Image.Resampling.LANCZOS)
+        logo_resized = logo_colored.resize((target_logo_w, target_logo_h), Image.Resampling.LANCZOS)
 
         r, g, b, a = logo_resized.split()
         alpha_floor = int(255 * min(self.opacity, 0.35)) if alpha_is_flat else 0
@@ -85,7 +85,7 @@ class WatermarkEngine:
                 fallback_mask = ImageOps.invert(fallback_mask)
             fallback_mask = fallback_mask.point(lambda p: int(p * self.opacity))
             if alpha_floor:
-                fallback_mask = fallback_mask.point(lambda p: max(p, alpha_floor) if p > 0 else 0)
+                fallback_mask = fallback_mask.point(lambda p: max(p, alpha_floor) if p > 0 else 0) # type: ignore
             a = fallback_mask
         logo_final = Image.merge("RGBA", (r, g, b, a))
 
@@ -123,7 +123,7 @@ class WatermarkEngine:
                     pos_y += rng.randint(-jitter_y, jitter_y)
                 canvas.paste(logo, (pos_x, pos_y), logo)
 
-        canvas_rotated = canvas.rotate(self.rotation, resample=Image.BICUBIC)
+        canvas_rotated = canvas.rotate(self.rotation, resample=Image.Resampling.BICUBIC)
 
         c_w, c_h = canvas_rotated.size
         left = (c_w - img_w) // 2
