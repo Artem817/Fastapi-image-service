@@ -44,6 +44,7 @@ Quality is not comparable to top-tier tools yet, but it will improve.
 
 ## Model Weights (.pth)
 In production, weights are typically stored outside the repo (S3/GCS/Artifacts)
+
 and downloaded at deploy time. For small projects you can use Git LFS, but avoid
 committing large `.pth` files directly to git.
 
@@ -95,3 +96,9 @@ weights are missing, the remove-bg endpoint returns an error.
 - `POST /images/flip`
 - `POST /images/watermark`
 - `DELETE /images/{image_id}`
+
+# Architectural Decisions
+For this project, I opted for a **Pragmatic Monolithic** approach for the core logic instead of over-engineering with Service Layers:
+1. For a single-developer project, keeping the flow within the endpoint enhances readability and speed of iteration.
+2. While this results in a "thicker" controller, the logic is clearly decoupled internally using Python's asyncio primitives.
+3. The processing logic is designed to be easily extractable into a standalone ImageService or a Background Worker (like Celery) if the project grows.
