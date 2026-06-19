@@ -6,7 +6,6 @@ from ..utility.schemas.schemas import ErrorResponse, HealthResponse
 
 router = APIRouter(tags=["health"])
 
-
 @router.get(
     "/ping-redis",
     response_model=HealthResponse,
@@ -19,8 +18,14 @@ async def ping_redis(redis_text=Depends(get_redis_text)):
     if not redis_text:
         log.error("redis_not_connected")
         raise AppError("Redis not connected", status_code=503)
-    val = await redis_text.get("some_key")
-    if val is None:
-        log.error("redis_probe_failed")
-        raise AppError("Failed to retrieve value from Redis", status_code=503)
-    return {"redis_status": "online", "value": val}
+        
+    try:
+        is_alive = await redis_text.ping()
+        if not is_alive:
+            raise AppError("Redis ping failed", status_code=503)
+            
+        return {"redis_status": "online"}
+        
+    except Exception as e:
+        log.error(f"redis_probe_failed: {str(e)}")
+        raise AppError("Failed to connect to Redis", status_code=503)

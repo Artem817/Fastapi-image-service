@@ -5,6 +5,8 @@ services:
       - .:/app
     env_file:
       - .env
+    environment:
+      - MODEL_URL=https://github.com/Artem817/Fastapi-image-service/releases/download/v1.0.0-rc1/resnet101_unet.pth
     depends_on:
       db:
         condition: service_healthy
@@ -13,7 +15,7 @@ services:
     ports:
       - "8000:8000"
     command: >
-      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-exclude '*.pth'"
   db:
     image: postgres:15
     env_file:

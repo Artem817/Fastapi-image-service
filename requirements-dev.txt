@@ -1,2 +1,6 @@
 pytest
 pytest-anyio
+pytest-cov
+aiosqlite
+ruff
+mypy

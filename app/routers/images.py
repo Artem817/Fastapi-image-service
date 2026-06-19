@@ -97,6 +97,14 @@ def save_locally(current_user: User, file_id: str, image_bytes: bytes) -> None:
     with open(file_path, "wb") as f:
         f.write(image_bytes)
 
+def write_temp_logo_file(logo_bytes: bytes) -> str:
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_logo:
+        tmp_logo.write(logo_bytes)
+        return tmp_logo.name
+
+def delete_file(path: str) -> None:
+    Path(path).unlink(missing_ok=True)
+
 def guess_media_type(data: bytes):
     kind = filetype.guess(data)
     if kind and kind.mime and kind.mime.startswith("image/"):
@@ -384,9 +392,7 @@ async def watermark_image(
         log.warning("empty_logo_file")
         raise InvalidFileError("Watermark logo file is empty")
 
-    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_logo:
-        tmp_logo.write(logo_bytes)
-        logo_path = tmp_logo.name
+    logo_path = await run_in_threadpool(write_temp_logo_file, logo_bytes)
 
     try:
         processor = ImageProcessor(
@@ -418,7 +424,7 @@ async def watermark_image(
             "seed": watermark_params.seed,
         }
     finally:
-        Path(logo_path).unlink(missing_ok=True)
+        await run_in_threadpool(delete_file, logo_path)
 
 @router.post(
     "/remove_bg",
@@ -462,9 +468,13 @@ async def remove_bg(
     """
     log = log_ctx(endpoint="remove_bg", user_id=current_user.id)
     log.info("request_received")
+
+    if model is None:
+        log.warning("model_not_available")
+        raise ModelNotAvailableError()
     
     file_id, image_bytes = await fetch_active_image(redis_text, redis_binary, current_user.id)
-    img_hash = get_image_hash(image_bytes)
+    img_hash = await run_in_threadpool(get_image_hash, image_bytes)
     log.info("image_fetched", extra={"file_id": file_id, "image_hash": img_hash})
     
     cache_key = f"cache:remove_bg:{current_user.id}:{img_hash}"

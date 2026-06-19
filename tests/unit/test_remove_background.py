@@ -78,7 +78,10 @@ def test_remove_background_regression(threshold):
     with open(INPUT_PATH, "rb") as f:
         input_bytes = f.read()
 
-    strategy = RemoveBackground(threshold=threshold)
+    try:
+        strategy = RemoveBackground(threshold=threshold)
+    except RuntimeError as exc:
+        pytest.skip(f"Model weights are not configured: {exc}")
     processed_bytes = strategy.process_image(input_bytes)
 
     with Image.open(io.BytesIO(processed_bytes)) as result_img:
