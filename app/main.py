@@ -3,12 +3,12 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi import Request
 from redis import asyncio as aioredis
+from starlette.concurrency import run_in_threadpool
 
 from app.models_unet import model_arch
 
-from app.database.database import engine
-from app.models.models import Base
 from app.routers import auth as auth_router
 from app.routers.exceptions_handler import register_exception_handlers
 from app.routers import health as health_router
@@ -16,9 +16,7 @@ from app.routers import images as images_router
 from app.routers import users as users_router
 from app.utility.log.log_root import setup_logging
 from app.utility.log.log_root import log_ctx
-from fastapi import Request
 
-Base.metadata.create_all(bind=engine)
 setup_logging()
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
@@ -31,13 +29,13 @@ def get_model(request: Request):
 async def lifespan(app: FastAPI):
     log = log_ctx(component="lifespan")
     log.info("startup_begin")
-    
-    app.state.redis = await aioredis.from_url(REDIS_URL, decode_responses=True)
-    app.state.redis_binary = await aioredis.from_url(REDIS_URL, decode_responses=False)
+
+    app.state.redis = aioredis.from_url(REDIS_URL, decode_responses=True)
+    app.state.redis_binary = aioredis.from_url(REDIS_URL, decode_responses=False)
     
     log.info("model_loading_start")
     try:
-        app.state.segmentation_model = model_arch.get_loaded_model()
+        app.state.segmentation_model = await run_in_threadpool(model_arch.get_loaded_model)
         if hasattr(app.state.segmentation_model, "eval"):
             app.state.segmentation_model.eval()
         log.info("model_loading_complete")
@@ -49,8 +47,8 @@ async def lifespan(app: FastAPI):
     yield
 
     log.info("shutdown_begin")
-    await app.state.redis.close()
-    await app.state.redis_binary.close()
+    await app.state.redis.aclose()
+    await app.state.redis_binary.aclose()
     log.info("shutdown_complete")
 
 async def get_user_settings(redis, user_id: int):

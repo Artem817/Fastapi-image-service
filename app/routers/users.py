@@ -13,7 +13,7 @@ router = APIRouter(tags=["users"])
     response_model=UserResponse,
     responses={401: {"model": ErrorResponse}},
 )
-def get_profile(current_user: User = Depends(get_current_user)):
+async def get_profile(current_user: User = Depends(get_current_user)):
     log = log_ctx(endpoint="profile", user_id=current_user.id)
     log.info("request_received")
     return {

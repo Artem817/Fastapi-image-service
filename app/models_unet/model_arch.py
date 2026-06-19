@@ -1,21 +1,19 @@
 import os
-import urllib.request
 import urllib.error
+import urllib.request
 from typing import Optional
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.models as models
-import torchvision.transforms as T
-from PIL import Image
-import numpy as np
 
 def ensure_model_weights():
     """
     Locate model weights (.pth). Order of precedence:
     1. Explicit path from ENV `MODEL_PATH`
     2. Local bundled file `resnet101_unet.pth`
-    3. Download from ENV `MODEL_URL` (falls back to GitHub release URL)
+    3. Download from ENV `MODEL_URL`
     """
 
     env_path = os.getenv("MODEL_PATH")
@@ -32,10 +30,7 @@ def ensure_model_weights():
         print(f"✓ Model weights found at: {weights_path}")
         return weights_path
 
-    download_url = os.getenv(
-        "MODEL_URL",
-        "https://github.com/Artem817/Fastapi-image-service/releases/download/v1.0.0-rc1/resnet101_unet.pth",
-    )
+    download_url = os.getenv("MODEL_URL")
 
     if not download_url:
         print("✗ MODEL_URL not provided and local weights missing.")
@@ -128,34 +123,42 @@ class ResNet101Unifier(nn.Module):
         return logits
 
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"Running on: {device}")
-
+model: Optional[ResNet101Unifier] = None
 model_ready = False
-model = ResNet101Unifier(n_classes=1).to(device)
-
-weights_path = ensure_model_weights()
-
-if weights_path and os.path.exists(weights_path):
-    try:
-        state_dict = torch.load(weights_path, map_location=device)
-        model.load_state_dict(state_dict)
-        model.eval()
-        model_ready = True
-        print("Model loaded successfully and set to eval mode")
-    except Exception as e:
-        model_ready = False
-        print(f"Error loading model weights: {e}")
-        print(f"Make sure {weights_path} is a valid PyTorch checkpoint.")
-        model.eval()
-else:
-    model_ready = False
-    print("Model weights s. remove_bg endpoint will not work.")
-    print("Provide MODEL_PATH or MODEL_URL, or place resnet101_unet.pth next to this file.")
-    model.eval()
 
 
 def get_loaded_model():
+    global model, model_ready
+
+    if model_ready and model is not None:
+        return model
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Running on: {device}")
+
+    loaded_model = ResNet101Unifier(n_classes=1).to(device)
+    weights_path = ensure_model_weights()
+
+    if weights_path and os.path.exists(weights_path):
+        try:
+            state_dict = torch.load(weights_path, map_location=device)
+            loaded_model.load_state_dict(state_dict)
+            loaded_model.eval()
+            model = loaded_model
+            model_ready = True
+            print("Model loaded successfully and set to eval mode")
+            return model
+        except Exception as e:
+            print(f"Error loading model weights: {e}")
+            print(f"Make sure {weights_path} is a valid PyTorch checkpoint.")
+            loaded_model.eval()
+    else:
+        print("Model weights missing. remove_bg endpoint will not work.")
+        print("Provide MODEL_PATH or MODEL_URL, or place resnet101_unet.pth next to this file.")
+        loaded_model.eval()
+
+    model = loaded_model
+    model_ready = False
     if not model_ready:
         raise RuntimeError(
             "Background removal model is not loaded. Set MODEL_PATH/ MODEL_URL or place resnet101_unet.pth in app/models_unet/."

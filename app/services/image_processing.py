@@ -192,7 +192,7 @@ class RemoveBackground(ImageProcessingStrategy):
                 original_img = image.convert("RGB")
                 w, h = original_img.size
 
-                input_tensor = self.transform(original_img).unsqueeze(0).to(self.device)  # type: ignore
+                input_tensor = self.transform(original_img).unsqueeze(0).to(self.device)
 
                 with torch.no_grad():
                     logits = self.model(input_tensor)
@@ -200,11 +200,11 @@ class RemoveBackground(ImageProcessingStrategy):
 
                 mask_normalized = (pred_mask * 255).astype("uint8")
                 mask_img = Image.fromarray(mask_normalized).convert("L")
-                resample = Image.Resampling.BILINEAR if hasattr(Image, "Resampling") else Image.BILINEAR  # type: ignore
+                resample = Image.Resampling.BILINEAR if hasattr(Image, "Resampling") else Image.BILINEAR
                 mask_img = mask_img.resize((w, h), resample)
 
                 cutoff = int(self.threshold * 255)
-                mask_img = mask_img.point(lambda p: 255 if p >= cutoff else 0) # type: ignore
+                mask_img = mask_img.point(lambda p: 255 if p >= cutoff else 0)
 
                 result_img = original_img.convert("RGBA")
                 result_img.putalpha(mask_img)

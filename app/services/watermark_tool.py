@@ -85,7 +85,7 @@ class WatermarkEngine:
                 fallback_mask = ImageOps.invert(fallback_mask)
             fallback_mask = fallback_mask.point(lambda p: int(p * self.opacity))
             if alpha_floor:
-                fallback_mask = fallback_mask.point(lambda p: max(p, alpha_floor) if p > 0 else 0) # type: ignore
+                fallback_mask = fallback_mask.point(lambda p: max(p, alpha_floor) if p > 0 else 0)
             a = fallback_mask
         logo_final = Image.merge("RGBA", (r, g, b, a))
 

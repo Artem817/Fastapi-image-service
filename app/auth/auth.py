@@ -5,7 +5,10 @@ from jose import jwt
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
+
 from app.database.database import get_db, settings
 from app.models.models import User
 from app.utility.log.log_root import log_ctx
@@ -33,17 +36,23 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
     return encoded_jwt
 
-def get_user_by_username(db: Session, username: str):
-    return db.query(User).filter(User.username == username).first()
+async def get_user_by_username(db: AsyncSession, username: str) -> User | None:
+    result = await db.execute(select(User).where(User.username == username))
+    return result.scalar_one_or_none()
 
 
-def authenticate_user(db: Session, username: str, password: str):
+async def authenticate_user(db: AsyncSession, username: str, password: str):
     log = log_ctx(component="auth", username=username)
-    user = get_user_by_username(db, username)
+    user = await get_user_by_username(db, username)
     if not user:
         log.warning("auth_failed_user_not_found")
         return False
-    if not verify_password(password, user.hashed_password):
+    password_is_valid = await run_in_threadpool(
+        verify_password,
+        password,
+        user.hashed_password,
+    )
+    if not password_is_valid:
         log.warning("auth_failed_bad_password")
         return False
     log.info("auth_success", extra={"user_id": user.id})
@@ -52,7 +61,7 @@ def authenticate_user(db: Session, username: str, password: str):
 
 async def get_current_user(
         credentials: HTTPAuthorizationCredentials = Depends(security),
-        db: Session = Depends(get_db)
+        db: AsyncSession = Depends(get_db)
 ):
     log = log_ctx(component="auth")
     credentials_exception = HTTPException(
@@ -80,7 +89,7 @@ async def get_current_user(
         log.warning("token_missing_username")
         raise credentials_exception
     
-    user = get_user_by_username(db, username=token_data.username)
+    user = await get_user_by_username(db, username=token_data.username)
     if user is None:
         log.warning("token_user_not_found", extra={"username": token_data.username})
         raise credentials_exception

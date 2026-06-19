@@ -44,7 +44,7 @@ class UploadResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     redis_status: Literal["online"]
-    value: str
+    value: Optional[str] = None
 
 class WatermarkResponse(StatusMessageResponse):
     opacity: float

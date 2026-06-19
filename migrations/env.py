@@ -1,10 +1,9 @@
 from logging.config import fileConfig
-from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 from alembic import context
 
 from sqlalchemy import create_engine
-from app.database.database import Base, settings
+from app.database.database import Base, make_sync_database_url, settings
 from app.models import models  # noqa: F401
 
 config = context.config
@@ -14,7 +13,7 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
-config.set_main_option('sqlalchemy.url', settings.database_url)
+config.set_main_option("sqlalchemy.url", make_sync_database_url(settings.database_url))
 
 def run_migrations_offline():
     url = config.get_main_option("sqlalchemy.url")
